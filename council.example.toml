@@ -1,0 +1,18 @@
+# Copy to council.toml (or let `doctor enroll` write it). With NO config file,
+# the council is native-only: just Claude. council.toml is git-ignored.
+
+[council]
+# Enrolled voices — only add ones whose `doctor smoke <voice>` PASSED.
+voices = ["claude", "codex", "grok"]
+
+# Who writes the final synthesised answer (defaults to claude if enrolled).
+chairman = "claude"
+
+# Per-call timeout in seconds (reasoning CLIs can be slow).
+timeout = 300
+
+# Optional: override a provider's command if your CLI lives somewhere unusual
+# or a vendor changed a flag. Rarely needed.
+# [providers.grok]
+# bin = "grok"
+# argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]

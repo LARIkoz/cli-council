@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Thin launcher so `council "question"` works from anywhere once bin/ is on PATH.
+# No dependencies: just runs the stdlib-only package with the repo on sys.path.
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+exec python3 -m council "$@"

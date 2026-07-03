@@ -1,0 +1,26 @@
+cli-council
+===========
+
+An independent, clean-room implementation of the "LLM council" idea: ask one
+question to several models, have them anonymously rank each other's answers, and
+let a chairman model synthesise a final answer.
+
+Credit / inspiration
+--------------------
+The three-stage council concept (first opinions -> anonymized peer review ->
+chairman synthesis) is inspired by Andrej Karpathy's `llm-council`
+(https://github.com/karpathy/llm-council). That project has no published
+license; **no code from it was copied.** cli-council is written from scratch and
+differs fundamentally in substrate: it orchestrates the official first-party
+subscription CLIs you already run (Claude Code, Codex, Grok, Gemini) instead of
+a paid HTTP API aggregator. All code here is original and MIT-licensed.
+
+What this is NOT
+----------------
+- Not an API client. It sends no HTTP requests to any model provider and stores
+  no API keys.
+- Not a credential tool. It never reads, stores, or transmits your logins. It
+  only invokes CLIs that you installed and authenticated yourself, through each
+  vendor's own official flow.
+- Not account sharing. Each user brings their own authenticated CLIs on their
+  own machine.

@@ -1,0 +1,15 @@
+# Runtime config written by the installer (per-machine; may name your CLIs)
+council.toml
+
+# Council run transcripts
+runs/
+*.run.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# OS
+.DS_Store
