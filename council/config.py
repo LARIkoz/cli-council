@@ -20,7 +20,7 @@ class Config:
     voices: list[str]
     chairman: str
     providers: dict[str, Provider]
-    timeout: float = 300.0
+    timeout: float | None = None  # None = per-voice (providers.resolve_timeout); a value overrides all
     source: str = "defaults (native-only)"
 
 
@@ -44,7 +44,8 @@ def load(path: str | None = None) -> Config:
         raise RuntimeError("council.toml found but Python < 3.11 has no tomllib; upgrade Python.")
     data = tomllib.loads(cfg_file.read_text())
 
-    # Per-provider argv/bin overrides (e.g. a custom install path or flag fix).
+    # Per-provider argv/bin/timeout overrides (e.g. a custom install path, a flag
+    # fix, or a slower ceiling for one voice).
     for name, over in (data.get("providers") or {}).items():
         base = providers.get(name)
         if base is None:
@@ -53,12 +54,14 @@ def load(path: str | None = None) -> Config:
             base,
             bin=over.get("bin", base.bin),
             argv=list(over["argv"]) if "argv" in over else base.argv,
+            timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
         )
 
     council = data.get("council") or {}
     voices = list(council.get("voices") or ["claude"])
     chairman = council.get("chairman") or ("claude" if "claude" in voices else voices[0])
-    timeout = float(council.get("timeout", 300.0))
+    # Absent → None → each voice uses its own ceiling. Present → global override.
+    timeout = float(council["timeout"]) if "timeout" in council else None
 
     unknown = [v for v in voices if v not in providers]
     if unknown:

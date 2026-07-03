@@ -8,11 +8,15 @@ voices = ["claude", "codex", "grok"]
 # Who writes the final synthesised answer (defaults to claude if enrolled).
 chairman = "claude"
 
-# Per-call timeout in seconds (reasoning CLIs can be slow).
-timeout = 300
+# Per-call timeout in seconds. LEAVE THIS OUT to use the per-voice defaults
+# (fast natives ~300s; slow reasoning voices like codex/grok 600s, since the
+# peer-ranking prompt carries every other answer). Setting it here forces one
+# ceiling on EVERY voice — an escape hatch, not the normal case.
+# timeout = 600
 
-# Optional: override a provider's command if your CLI lives somewhere unusual
-# or a vendor changed a flag. Rarely needed.
+# Optional: override a provider's command or ceiling if your CLI lives somewhere
+# unusual, a vendor changed a flag, or one voice is slow on your machine.
 # [providers.grok]
 # bin = "grok"
 # argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]
+# timeout = 900

@@ -1,0 +1,29 @@
+# cli-council
+
+> Ask one question; several first-party model CLIs (Claude, Codex, Grok,
+> Gemini/Antigravity) answer, anonymously rank each other, and a chairman
+> synthesises the final answer. No API keys, no HTTP, zero runtime dependencies —
+> it only shells out to the official CLIs you already installed and authenticated.
+
+cli-council is an independent, clean-room reimplementation of the "LLM council"
+idea (first opinions → anonymized peer ranking → chairman synthesis) on a
+**subscription-CLI substrate** instead of a paid HTTP API. Native-default —
+Claude works out of the box; every other voice is opt-in behind a strict,
+smoke-gated install contract that never enrols a voice it hasn't proven answers.
+
+## Docs
+
+- [README](README.md): what it is, why subscription-CLI and not an API, the provider table, how the three stages work, install and run.
+- [Install contract](installer/CONTRACT.md): the strict gated install sequence (detect → choose → install → login → smoke → enrol → dry-run) and the invariants it guarantees.
+- [NOTICE](NOTICE): clean-room provenance and credit to Karpathy's llm-council idea; what this is NOT (not an API client, not a credential tool, not account sharing).
+
+## Code
+
+- [council/stages.py](council/stages.py): the three council stages — first opinions, anonymized peer ranking, chairman synthesis, with loud-fail on any voice.
+- [council/providers.py](council/providers.py): the subscription-CLI provider table; each voice is a subprocess to an official CLI, with per-voice timeouts.
+- [council/aggregate.py](council/aggregate.py): strict `FINAL RANKING` parse (exact permutation or reported failure) + Borda leaderboard + critique extraction.
+- [installer/doctor.py](installer/doctor.py): the deterministic install gates — detect, smoke, smoke-gated enroll, list.
+
+## Optional
+
+- [council.example.toml](council.example.toml): enrolment plus per-voice command and timeout overrides.

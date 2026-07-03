@@ -3,4 +3,5 @@
 # No dependencies: just runs the stdlib-only package with the repo on sys.path.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-exec python3 -m council "$@"
+# Put the repo on sys.path so `-m council` resolves from any cwd (bin/ on PATH).
+exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" python3 -m council "$@"

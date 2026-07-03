@@ -17,7 +17,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--voices", help="comma-separated subset of enrolled voices to use")
     ap.add_argument("--chairman", help="which voice synthesises the final answer")
     ap.add_argument("--config", help="path to council.toml")
-    ap.add_argument("--timeout", type=float, help="per-call timeout seconds")
+    ap.add_argument("--timeout", type=float,
+                    help="per-call timeout seconds (overrides the per-voice defaults for every voice)")
     ap.add_argument("--json", action="store_true", help="print the full result as JSON")
     ap.add_argument("--version", action="version", version=f"cli-council {__version__}")
     args = ap.parse_args(argv)
@@ -34,8 +35,9 @@ def main(argv: list[str] | None = None) -> int:
     chairman = args.chairman or cfg.chairman
     timeout = args.timeout or cfg.timeout
 
+    tmode = "per-voice" if timeout is None else f"{timeout:.0f}s (forced)"
     print(f"cli-council {__version__} · voices: {', '.join(voices)} · chairman: {chairman} "
-          f"· config: {cfg.source}", file=sys.stderr)
+          f"· timeout: {tmode} · config: {cfg.source}", file=sys.stderr)
 
     try:
         res = stages.run_council(question, voices, chairman, cfg.providers, timeout,

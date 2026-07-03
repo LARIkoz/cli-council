@@ -65,18 +65,23 @@ config, and the agent says so out loud. No half-added voices, ever.
 ### Gate 4 — Enrol & dry-run
 
 ```
-python installer/doctor.py enroll claude codex grok      # only smoke-PASSED voices
+python installer/doctor.py enroll claude codex grok      # re-smokes each; writes only the PASSes
 council "What are the trade-offs of WAL mode in SQLite?"  # dry-run the whole council
 ```
 
-Enrolment writes `council.toml`. The dry-run shows the three stages end-to-end so
-you see the council actually work before you rely on it.
+`enroll` **re-smokes every voice you name** and writes only the ones that PASS to
+`council.toml` — a voice that fails is refused out loud, never half-added. (Pass
+`--no-verify` to trust the smoke you just ran in Gate 3.) The dry-run then shows
+the three stages end-to-end so you see the council actually work before you rely
+on it.
 
 ## Invariants (what the contract guarantees)
 
 - **Native-only floor.** With zero opt-ins you still have a working council
   (Claude). It can never end up empty.
-- **Smoke-gated enrolment.** A voice reaches `council.toml` only after a PASS.
+- **Smoke-gated enrolment (enforced in code).** `enroll` itself re-smokes and
+  writes only the PASSes, so a voice reaches `council.toml` only after it proves
+  it answers — the guarantee holds even if the caller names a broken voice.
 - **Loud failure.** Missing CLI, failed login, failed smoke, unparseable ranking
   — all surfaced, never swallowed.
 - **No credentials touched.** cli-council installs official CLIs and reads their

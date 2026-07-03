@@ -20,6 +20,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+# Fallback per-call ceiling for voices that don't declare their own. Reasoning
+# CLIs answering a small prompt return in seconds; the ceiling only bites on a
+# genuinely stuck call. Slow voices raise it via Provider.timeout (below).
+DEFAULT_TIMEOUT = 300.0
+
 
 def _plain(stdout: str) -> str:
     return stdout.strip()
@@ -45,6 +50,7 @@ class Provider:
     extract: Callable[[str], str] = _plain
     experimental: bool = False
     env: dict = field(default_factory=dict)
+    timeout: float = 0.0  # per-voice ceiling in seconds; 0 = use DEFAULT_TIMEOUT
 
 
 # The four official subscription CLIs. Claude is the native default (Claude Code
@@ -58,9 +64,16 @@ PROVIDERS: dict[str, Provider] = {
     ),
     "codex": Provider(
         name="codex", bin="codex",
-        argv=["codex", "exec", "-"], extract=_plain,
+        # --skip-git-repo-check: `codex exec` otherwise refuses to run outside a
+        # "trusted" (git) directory. A council question is read-only Q&A on stdin,
+        # so the guard just breaks "run council from anywhere" — skip it.
+        argv=["codex", "exec", "--skip-git-repo-check", "-"], extract=_plain,
         install_hint="npm i -g @openai/codex   (or: brew install codex)",
         login_hint="codex login",
+        # High-reasoning voices need headroom on the peer-ranking stage, where
+        # the prompt carries every other voice's full answer. 300s timed one out
+        # mid-ranking in a 3-voice council; 600s clears a 4-voice bundle.
+        timeout=600.0,
     ),
     "grok": Provider(
         name="grok", bin="grok", uses_prompt_file=True,
@@ -68,6 +81,7 @@ PROVIDERS: dict[str, Provider] = {
         extract=_grok_json,
         install_hint="curl -fsSL https://x.ai/cli/install.sh | bash",
         login_hint="grok login",
+        timeout=600.0,  # same as codex: slow on the multi-answer ranking bundle
     ),
     # Experimental: gemini's non-interactive mode + auth vary by setup (some
     # installs need vendor-specific environment variables or a first-run consent
@@ -95,7 +109,15 @@ def is_installed(p: Provider) -> bool:
     return shutil.which(p.bin) is not None
 
 
-def invoke(p: Provider, prompt: str, timeout: float = 300.0) -> tuple[bool, str]:
+def resolve_timeout(p: Provider, override: float | None = None) -> float:
+    """Effective per-call ceiling. An explicit override (CLI --timeout / toml)
+    wins for every voice; otherwise the voice's own ceiling, else the default."""
+    if override:
+        return override
+    return p.timeout or DEFAULT_TIMEOUT
+
+
+def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[bool, str]:
     """Run the provider's CLI headless with `prompt`. Returns (ok, text_or_error).
 
     ok is False on: binary missing, non-zero exit, timeout, or empty output —

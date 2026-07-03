@@ -10,7 +10,7 @@ import hashlib
 from dataclasses import dataclass, field
 
 from . import aggregate
-from .providers import Provider, invoke
+from .providers import Provider, invoke, resolve_timeout
 
 RANK_PROMPT = """\
 You are a peer-ranking judge. Several assistants answered the SAME question. Their
@@ -89,14 +89,17 @@ def _anonymize(opinions: dict[str, str]) -> tuple[str, dict[str, str]]:
 
 
 def run_council(question: str, voices: list[str], chairman: str,
-                providers: dict[str, Provider], timeout: float = 300.0,
+                providers: dict[str, Provider], timeout: float | None = None,
                 log=lambda *_: None) -> CouncilResult:
+    # `timeout` (from --timeout / council.toml) is an explicit global override;
+    # when None, each voice uses its own ceiling (resolve_timeout). Slow voices
+    # (codex/grok) thus get their headroom without making fast natives wait.
     res = CouncilResult(question=question, chairman=chairman)
 
     # Stage 1 — first opinions.
     log("stage 1 · first opinions")
     for v in voices:
-        ok, out = invoke(providers[v], question, timeout)
+        ok, out = invoke(providers[v], question, resolve_timeout(providers[v], timeout))
         if ok:
             res.opinions[v] = out
             log(f"    {v} ✓")
@@ -120,7 +123,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     labels = sorted(res.label_to_voice)
     rank_prompt = RANK_PROMPT.format(question=question, blocks=blocks)
     for v in res.opinions:  # only voices that produced an answer may rank
-        ok, out = invoke(providers[v], rank_prompt, timeout)
+        ok, out = invoke(providers[v], rank_prompt, resolve_timeout(providers[v], timeout))
         if not ok:
             res.rank_errors.append({"voice": v, "reason": out})
             log(f"    {v} ✗ {out}")
@@ -141,7 +144,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     if chair != chairman:
         log(f"    chairman '{chairman}' had no answer; using '{chair}'")
         res.chairman = chair
-    ok, out = invoke(providers[chair], _chairman_prompt(res), timeout)
+    ok, out = invoke(providers[chair], _chairman_prompt(res), resolve_timeout(providers[chair], timeout))
     if ok:
         res.final = out
         log("    ✓")

@@ -4,7 +4,8 @@ Subcommands the installer (or you) runs:
 
     doctor detect              which provider CLIs are installed
     doctor smoke <voice>       fire a 1-line live call; PASS only if it works
-    doctor enroll <v> [<v>...] write council.toml (first voice with claude wins chair)
+    doctor enroll <v> [<v>...] re-smoke each, then write council.toml with only
+                               the PASSes (add --no-verify to trust a prior smoke)
     doctor list                show enrolled vs available
 
 `smoke` is the gate: a voice is only fit to enrol if its smoke PASSES here. It
@@ -35,29 +36,56 @@ def detect() -> int:
     return 0
 
 
+def _smoke(p) -> tuple[bool, str]:
+    """One live 1-word call. Returns (ok, detail). Not-installed counts as a
+    fail — the enrolment gate only wants voices that actually answer."""
+    if not is_installed(p):
+        return False, f"not installed. {p.install_hint}"
+    ok, out = invoke(p, SMOKE_PROMPT, timeout=90.0)
+    return (True, repr(out[:60])) if ok else (False, out)
+
+
 def smoke(voice: str) -> int:
     p = PROVIDERS.get(voice)
     if p is None:
         print(f"unknown voice '{voice}'; known: {sorted(PROVIDERS)}", file=sys.stderr)
         return 2
-    if not is_installed(p):
-        print(f"SMOKE FAIL · {voice}: not installed. {p.install_hint}")
-        return 1
     print(f"smoking {voice} (1 live call)…", file=sys.stderr)
-    ok, out = invoke(p, SMOKE_PROMPT, timeout=90.0)
+    ok, detail = _smoke(p)
     if ok:
-        print(f"SMOKE PASS · {voice}: {out[:60]!r}")
+        print(f"SMOKE PASS · {voice}: {detail}")
         return 0
-    print(f"SMOKE FAIL · {voice}: {out}")
+    print(f"SMOKE FAIL · {voice}: {detail}")
     print(f"           if not logged in: {p.login_hint}")
     return 1
 
 
-def enroll(voices: list[str]) -> int:
+def enroll(voices: list[str], verify: bool = True) -> int:
     unknown = [v for v in voices if v not in PROVIDERS]
     if unknown:
         print(f"unknown voices {unknown}; known: {sorted(PROVIDERS)}", file=sys.stderr)
         return 2
+
+    if verify:
+        # The enrolment gate IS smoke: re-prove every voice actually answers
+        # before it touches council.toml. A voice that fails is dropped LOUDLY,
+        # never half-added — this is what makes the "strict" contract self-
+        # enforcing rather than trusting the caller. Pass --no-verify only if you
+        # just smoked these voices in the previous gate and want to skip the cost.
+        kept = []
+        for v in voices:
+            ok, detail = _smoke(PROVIDERS[v])
+            print(f"  {'PASS' if ok else 'FAIL'} · {v}: {detail}", file=sys.stderr)
+            if ok:
+                kept.append(v)
+            else:
+                print(f"refused — NOT enrolling '{v}' (failed smoke). {PROVIDERS[v].login_hint}")
+        voices = kept
+        if not voices:
+            print("no voice passed smoke — nothing enrolled. Fix install/login and retry.",
+                  file=sys.stderr)
+            return 1
+
     if "claude" not in voices:
         # Native default is always present; put it first unless the user is
         # deliberately building a claude-less council (allowed, but warned).
@@ -115,7 +143,9 @@ def main(argv: list[str]) -> int:
     if cmd == "smoke":
         return smoke(rest[0]) if rest else _usage()
     if cmd == "enroll":
-        return enroll(rest) if rest else _usage()
+        verify = "--no-verify" not in rest
+        rest = [r for r in rest if r != "--no-verify"]
+        return enroll(rest, verify=verify) if rest else _usage()
     if cmd == "list":
         return list_voices()
     return _usage()

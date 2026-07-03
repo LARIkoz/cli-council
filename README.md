@@ -104,14 +104,30 @@ council --chairman codex "your question"     # pick who synthesises
 council --voices claude,grok "your question" # ad-hoc subset of enrolled voices
 ```
 
+## Configure
+
+Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
+[council.example.toml](council.example.toml)):
+
+- **`voices`** — the enrolled voices. Only smoke-PASSED ones belong here, and
+  `doctor enroll` re-smokes to keep it that way.
+- **`chairman`** — who writes the final answer (default: `claude`).
+- **`timeout`** — leave it out to use the **per-voice defaults**: fast native
+  voices ~300s, slower reasoning voices (`codex`, `grok`) 600s, because the
+  peer-ranking prompt carries every other answer and takes longer. Set it to
+  force one ceiling on every voice, or override a single voice under
+  `[providers.<name>]`.
+
 ## Status
 
 Early, but the full three-stage council runs end-to-end today. Verified live:
-`claude`, `codex`, `grok`, and Google's `agy` — including a multi-voice council
-where one slow voice timed out mid-ranking and was dropped **loudly** while the
-rest carried on (that's the design). `gemini` is structurally supported but
-headless auth varies by machine, so it's gated by its own smoke like everything
-else. Contributions welcome.
+`claude`, `codex`, `grok`, and Google's `agy`. The strict install contract is
+real, not aspirational — `doctor enroll` re-smokes each voice and writes only the
+ones that answer; in testing it refused a retired-tier `gemini` and a
+misconfigured `codex` **loudly** rather than half-adding them, and a voice that
+dies mid-council is likewise dropped while the rest carry on. `gemini` is
+structurally supported, but some Google tiers are retired in favour of `agy`, so
+like everything else it's gated by its own smoke. Contributions welcome.
 
 ## License
 
