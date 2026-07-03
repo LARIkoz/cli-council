@@ -12,7 +12,7 @@ chairman synthesis) is inspired by Andrej Karpathy's `llm-council`
 (https://github.com/karpathy/llm-council). That project has no published
 license; **no code from it was copied.** cli-council is written from scratch and
 differs fundamentally in substrate: it orchestrates the official first-party
-subscription CLIs you already run (Claude Code, Codex, Grok, Gemini) instead of
+subscription CLIs you already run (Claude Code, Codex, Grok, Gemini/Antigravity) instead of
 a paid HTTP API aggregator. All code here is original and MIT-licensed.
 
 What this is NOT

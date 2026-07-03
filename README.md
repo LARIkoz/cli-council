@@ -10,12 +10,26 @@ rebuilt from scratch on a different substrate: **subscriptions, not API keys.**
 ```
 $ council "Is SQLite WAL + synchronous=NORMAL safe for a nightly batch job?"
 
-  stage 1 · first opinions      claude ✓  codex ✓  grok ✓
-  stage 2 · anonymized ranking  claude ✓  codex ✓  grok ✓   →  leaderboard
-  stage 3 · chairman (claude)   ✓
+cli-council 0.1.0 · voices: claude, codex, grok · chairman: claude · timeout: per-voice
+stage 1 · first opinions
+    claude ✓
+    codex ✓
+    grok ✓
+stage 2 · anonymized ranking
+    claude ✓
+    codex ✓
+    grok ✓
+stage 3 · chairman (claude)
+    ✓
 
-  ── Final answer ──────────────────────────────────────────
-  Yes, with two conditions … (synthesised from all three, weighted by peer rank)
+  peer leaderboard:
+    1. grok  (mean 1.33)
+    2. claude  (mean 1.67)
+    3. codex  (mean 3.0)
+
+── Final answer ──────────────────────────────────────────
+
+Yes, with two conditions … (synthesised from all three, weighted by peer rank)
 ```
 
 ## Why it's different
@@ -87,8 +101,10 @@ A voice that errors or fails to produce a parseable ranking is reported
 
 ## Install
 
+Requires Python 3.11+ (stdlib only — nothing to `pip install`).
+
 ```bash
-git clone <this repo> && cd cli-council
+git clone https://github.com/LARIkoz/cli-council && cd cli-council
 ./install.sh          # runs the strict install contract (detect → choose → install → login → smoke)
 ```
 
@@ -132,5 +148,5 @@ like everything else it's gated by its own smoke. Contributions welcome.
 ## License
 
 MIT — see [LICENSE](LICENSE). Not affiliated with Anthropic, OpenAI, xAI, or
-Google; "Claude", "Codex", "Grok", "Gemini" are their owners' marks, used only
-to name the CLIs this tool invokes.
+Google; "Claude", "Codex", "Grok", "Gemini", and "Antigravity" are their owners'
+marks, used only to name the CLIs this tool invokes.

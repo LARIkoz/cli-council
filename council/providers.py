@@ -53,8 +53,8 @@ class Provider:
     timeout: float = 0.0  # per-voice ceiling in seconds; 0 = use DEFAULT_TIMEOUT
 
 
-# The four official subscription CLIs. Claude is the native default (Claude Code
-# is built for headless agentic use on a Claude subscription); the rest are opt-in.
+# The official subscription CLIs. Claude is the native default (Claude Code is
+# built for headless agentic use on a Claude subscription); the rest are opt-in.
 PROVIDERS: dict[str, Provider] = {
     "claude": Provider(
         name="claude", bin="claude", native=True,
