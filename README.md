@@ -198,6 +198,37 @@ Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
   redteam = ["codex", "grok"]             # panel: adversarial attack on findings
   ```
 
+### Extra CLI voices — two models of one CLI (optional)
+
+A `[providers.<name>]` block with `type = "cli"` **defines a new CLI voice** from
+scratch — most useful for enrolling **two models of the same CLI** as separate
+voices, which the single built-in entry can't express. For example, one Claude
+voice on Opus and another on Sonnet:
+
+```toml
+[providers.opus]
+type = "cli"
+bin  = "claude"
+argv = ["claude", "-p", "--model", "opus"]
+native = true
+
+[providers.sonnet]
+type = "cli"
+bin  = "claude"
+argv = ["claude", "-p", "--model", "sonnet"]
+native = true
+
+[council]
+voices   = ["opus", "sonnet", "codex", "grok"]
+chairman = "opus"
+```
+
+`argv` is the exact command **as an array** — a bare string is rejected at load
+(it would explode into per-character arguments). The prompt reaches the CLI by the
+same convention as the built-ins: a `{prompt_file}` slot, a `{prompt}` slot, or,
+with neither, on stdin. A block whose name matches an **existing** voice overrides
+it (`argv` / `bin` / `timeout`) instead of defining a new one.
+
 ### Token voices (optional)
 
 The default council is subscription-CLI only and needs no keys. If you'd rather

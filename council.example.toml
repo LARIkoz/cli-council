@@ -21,6 +21,25 @@ chairman = "claude"
 # argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]
 # timeout = 900
 
+# ── Optional: define an EXTRA CLI voice from scratch (type = "cli") ───────────
+# A NEW name with type="cli" defines a fresh subscription-CLI voice — most useful
+# for running two models of ONE CLI as separate voices (the built-in table has a
+# single `claude`). argv is the exact command AS AN ARRAY (a bare string is
+# rejected at load — it would explode into per-character args). Then list the
+# names in [council] voices above.
+#
+# [providers.opus]
+# type = "cli"
+# bin  = "claude"
+# argv = ["claude", "-p", "--model", "opus"]
+# native = true
+#
+# [providers.sonnet]
+# type = "cli"
+# bin  = "claude"
+# argv = ["claude", "-p", "--model", "sonnet"]
+# native = true
+
 # ── Optional: review verification panels ────────────────────────────────────
 # `council review` runs the Karpathy council (reviews → anonymous peer-ranking →
 # chairman synthesis), then these PANELS verify the synthesis: every listed voice
