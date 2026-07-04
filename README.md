@@ -7,30 +7,9 @@ for**, not a paid API.
 Inspired by [karpathy/llm-council](https://github.com/karpathy/llm-council),
 rebuilt from scratch on a different substrate: **subscriptions, not API keys.**
 
-```
-$ council "Is SQLite WAL + synchronous=NORMAL safe for a nightly batch job?"
-
-cli-council 0.1.0 · voices: claude, codex, grok · chairman: claude · timeout: per-voice
-stage 1 · first opinions
-    claude ✓
-    codex ✓
-    grok ✓
-stage 2 · anonymized ranking
-    claude ✓
-    codex ✓
-    grok ✓
-stage 3 · chairman (claude)
-    ✓
-
-  peer leaderboard:
-    1. grok  (mean 1.33)
-    2. claude  (mean 1.67)
-    3. codex  (mean 3.0)
-
-── Final answer ──────────────────────────────────────────
-
-Yes, with two conditions … (synthesised from all three, weighted by peer rank)
-```
+<p align="center">
+  <img src="docs/council-run.svg" alt="cli-council — a real three-voice run: opinions, anonymized peer ranking, a chairman synthesis" width="760">
+</p>
 
 ## Why it's different
 
@@ -83,6 +62,10 @@ one after another, and reads their stdout. That means:
   violates the vendors' terms. cli-council ships no mechanism for it.
 
 ## How it works
+
+<p align="center">
+  <img src="docs/how-it-works.svg" alt="How the council works — first opinions, anonymized peer ranking (Borda), chairman synthesis" width="900">
+</p>
 
 Three stages, mirroring the council idea:
 

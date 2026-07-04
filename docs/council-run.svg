@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="566" viewBox="0 0 920 566" font-family="'SF Mono','Menlo','DejaVu Sans Mono','Consolas',monospace">
+  <defs>
+    <style>
+      .t   { font-size: 15px; }
+      .sm  { font-size: 12.5px; }
+      .dim { fill: #6e7681; }
+      .hdr { fill: #8b949e; }
+      .txt { fill: #e6edf3; }
+      .ans { fill: #adbac7; }
+      .ok  { fill: #3fb950; }
+      .num { fill: #79c0ff; }
+      .div { fill: #484f58; }
+    </style>
+  </defs>
+
+  <!-- window -->
+  <rect x="8" y="8" width="904" height="550" rx="12" fill="#0d1117" stroke="#30363d" stroke-width="1"/>
+  <!-- title bar -->
+  <path d="M8 20 a12 12 0 0 1 12 -12 h880 a12 12 0 0 1 12 12 v24 h-904 z" fill="#161b22"/>
+  <circle cx="30" cy="28" r="6" fill="#ff5f56"/>
+  <circle cx="50" cy="28" r="6" fill="#ffbd2e"/>
+  <circle cx="70" cy="28" r="6" fill="#27c93f"/>
+  <text x="460" y="33" text-anchor="middle" class="sm dim">council — zsh</text>
+
+  <!-- body -->
+  <text x="30" y="84" class="t"><tspan class="ok">$</tspan><tspan class="txt"> council "Is force-pushing to a shared git branch safe?"</tspan></text>
+
+  <text x="30" y="118" class="sm dim">cli-council 0.1.0 · voices: claude, codex, grok · chairman: claude · timeout: per-voice</text>
+
+  <text x="30" y="150" class="t hdr">stage 1 · first opinions</text>
+  <text x="30" y="176" class="t"><tspan class="txt">    claude </tspan><tspan class="ok">✓</tspan><tspan class="txt">   codex </tspan><tspan class="ok">✓</tspan><tspan class="txt">   grok </tspan><tspan class="ok">✓</tspan></text>
+
+  <text x="30" y="208" class="t hdr">stage 2 · anonymized ranking</text>
+  <text x="30" y="234" class="t"><tspan class="txt">    claude </tspan><tspan class="ok">✓</tspan><tspan class="txt">   codex </tspan><tspan class="ok">✓</tspan><tspan class="txt">   grok </tspan><tspan class="ok">✓</tspan></text>
+
+  <text x="30" y="266" class="t"><tspan class="hdr">stage 3 · chairman (claude)   </tspan><tspan class="ok">✓</tspan></text>
+
+  <text x="30" y="302" class="t hdr">  peer leaderboard:</text>
+  <text x="30" y="328" class="t"><tspan class="num">    1. </tspan><tspan class="txt">grok     </tspan><tspan class="dim">mean 1.33</tspan></text>
+  <text x="30" y="352" class="t"><tspan class="num">    2. </tspan><tspan class="txt">claude   </tspan><tspan class="dim">mean 1.67</tspan></text>
+  <text x="30" y="376" class="t"><tspan class="num">    3. </tspan><tspan class="txt">codex    </tspan><tspan class="dim">mean 3.00</tspan></text>
+
+  <text x="30" y="414" class="t div">── Final answer ─────────────────────────────────────────</text>
+  <text x="30" y="444" class="t ans">No — it rewrites published history, so teammates' branches</text>
+  <text x="30" y="470" class="t ans">diverge and their commits can vanish. Rule: never force-push a</text>
+  <text x="30" y="496" class="t ans">shared branch (main / develop) — only branches you alone own.</text>
+  <text x="30" y="522" class="t ans"><tspan class="ans">Safer: </tspan><tspan class="txt">git revert</tspan><tspan class="ans">, or push with </tspan><tspan class="txt">--force-with-lease</tspan><tspan class="ans">.</tspan></text>
+</svg>

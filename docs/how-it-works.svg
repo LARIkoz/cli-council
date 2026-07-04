@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="484" viewBox="0 0 1000 484" font-family="-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <defs>
+    <style>
+      .h1  { fill:#e6edf3; font-weight:600; font-size:21px; }
+      .sub { fill:#8b949e; font-size:13px; }
+      .ch  { fill:#e6edf3; font-weight:600; font-size:16px; }
+      .lab { fill:#e6edf3; font-size:14px; }
+      .mut { fill:#8b949e; font-size:12.5px; }
+      .mono{ font-family:'SF Mono','Menlo','Consolas',monospace; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="484" fill="#0d1117"/>
+
+  <!-- title -->
+  <text x="28" y="46" class="h1">How the council works</text>
+  <text x="28" y="70" class="sub">one question &#8594; three stages &#8594; one synthesized answer</text>
+
+  <!-- ============ CARD 1 · First opinions ============ -->
+  <rect x="28" y="96" width="294" height="300" rx="12" fill="#161b22" stroke="#30363d"/>
+  <circle cx="56" cy="130" r="15" fill="#1f6feb"/>
+  <text x="56" y="136" text-anchor="middle" fill="#ffffff" font-weight="700" font-size="16">1</text>
+  <text x="82" y="136" class="ch">First opinions</text>
+
+  <rect x="52" y="160" width="246" height="34" rx="8" fill="#12233f" stroke="#2f6feb"/>
+  <text x="175" y="182" text-anchor="middle" fill="#cae0ff" font-size="13.5">your question</text>
+  <path d="M175 196 v14" stroke="#6e7681" stroke-width="1.6"/>
+  <path d="M170 205 l5 6 l5 -6" fill="none" stroke="#6e7681" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <g>
+    <rect x="52" y="220" width="246" height="32" rx="8" fill="#21262d" stroke="#30363d"/>
+    <text x="68" y="240" class="lab">claude</text><text x="282" y="240" text-anchor="end" class="mut">→ answer</text>
+    <rect x="52" y="260" width="246" height="32" rx="8" fill="#21262d" stroke="#30363d"/>
+    <text x="68" y="280" class="lab">codex</text><text x="282" y="280" text-anchor="end" class="mut">→ answer</text>
+    <rect x="52" y="300" width="246" height="32" rx="8" fill="#21262d" stroke="#30363d"/>
+    <text x="68" y="320" class="lab">grok</text><text x="282" y="320" text-anchor="end" class="mut">→ answer</text>
+  </g>
+  <text x="52" y="360" class="mut">Every enrolled voice answers</text>
+  <text x="52" y="378" class="mut">the same question, independently.</text>
+
+  <!-- arrow 1→2 -->
+  <path d="M331 250 l12 10 l-12 10" fill="none" stroke="#58a6ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ CARD 2 · Anonymized ranking ============ -->
+  <rect x="352" y="96" width="294" height="300" rx="12" fill="#161b22" stroke="#30363d"/>
+  <circle cx="380" cy="130" r="15" fill="#1f6feb"/>
+  <text x="380" y="136" text-anchor="middle" fill="#ffffff" font-weight="700" font-size="16">2</text>
+  <text x="406" y="136" class="ch">Anonymized ranking</text>
+
+  <rect x="378" y="158" width="66" height="40" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="411" y="184" text-anchor="middle" class="mono" fill="#e6edf3" font-size="18">A</text>
+  <rect x="454" y="158" width="66" height="40" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="487" y="184" text-anchor="middle" class="mono" fill="#e6edf3" font-size="18">B</text>
+  <rect x="530" y="158" width="66" height="40" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="563" y="184" text-anchor="middle" class="mono" fill="#e6edf3" font-size="18">C</text>
+
+  <text x="378" y="224" class="mut">Answers relabeled &amp; shuffled — no</text>
+  <text x="378" y="242" class="mut">model sees whose answer is whose.</text>
+
+  <rect x="378" y="262" width="240" height="74" rx="8" fill="#1a1f27" stroke="#30363d"/>
+  <text x="394" y="286" fill="#e3b341" font-size="13" font-weight="600">★ Borda leaderboard</text>
+  <text x="394" y="312" class="mono" fill="#e6edf3" font-size="13.5">1 grok  ›  2 claude  ›  3 codex</text>
+  <text x="394" y="328" class="mut" font-size="11.5">peer rank weights the chairman</text>
+
+  <text x="378" y="366" class="mut">Each voice ranks the rest, blind.</text>
+
+  <!-- arrow 2→3 -->
+  <path d="M655 250 l12 10 l-12 10" fill="none" stroke="#58a6ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ CARD 3 · Chairman ============ -->
+  <rect x="676" y="96" width="296" height="300" rx="12" fill="#161b22" stroke="#30363d"/>
+  <circle cx="704" cy="130" r="15" fill="#1f6feb"/>
+  <text x="704" y="136" text-anchor="middle" fill="#ffffff" font-weight="700" font-size="16">3</text>
+  <text x="730" y="136" class="ch">Chairman</text>
+
+  <rect x="700" y="160" width="248" height="38" rx="8" fill="#241a3a" stroke="#8957e5"/>
+  <text x="824" y="184" text-anchor="middle" fill="#d2b8ff" font-size="14.5" font-weight="600">chairman</text>
+
+  <text x="700" y="228" class="mut">reads every answer,</text>
+  <text x="700" y="246" class="mut">the leaderboard &amp; the critiques</text>
+
+  <path d="M824 258 v16" stroke="#6e7681" stroke-width="1.6"/>
+  <path d="M819 269 l5 6 l5 -6" fill="none" stroke="#6e7681" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="700" y="286" width="248" height="44" rx="8" fill="#0f2e1b" stroke="#238636"/>
+  <text x="824" y="313" text-anchor="middle" fill="#56d364" font-size="15.5" font-weight="600">✓  final answer</text>
+
+  <text x="700" y="366" class="mut">One clear answer, synthesized.</text>
+
+  <!-- ============ bottom strip ============ -->
+  <line x1="28" y1="424" x2="972" y2="424" stroke="#30363d" stroke-width="1"/>
+  <text x="500" y="452" text-anchor="middle" fill="#8b949e" font-size="13.5">
+    <tspan fill="#adbac7">No API keys</tspan><tspan fill="#484f58">    ·    </tspan><tspan fill="#adbac7">runs the CLIs you already pay for</tspan><tspan fill="#484f58">    ·    </tspan><tspan fill="#adbac7">loud-fail, never silent</tspan><tspan fill="#484f58">    ·    </tspan><tspan fill="#adbac7">rankings weight, never filter</tspan>
+  </text>
+</svg>
