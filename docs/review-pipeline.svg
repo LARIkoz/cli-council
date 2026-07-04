@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="884" viewBox="0 0 1000 884" font-family="-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <defs>
+    <style>
+      .h1  { fill:#e6edf3; font-weight:600; font-size:21px; }
+      .sub { fill:#8b949e; font-size:13px; }
+      .ch  { fill:#e6edf3; font-weight:600; font-size:16px; }
+      .lab { fill:#e6edf3; font-size:14px; }
+      .mut { fill:#8b949e; font-size:12.5px; }
+      .mono{ font-family:'SF Mono','Menlo','Consolas',monospace; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="1000" height="884" fill="#0d1117"/>
+
+  <!-- title -->
+  <text x="28" y="46" class="h1">Review mode — the full pipeline</text>
+  <text x="28" y="70" class="sub">council review [ref]  &#8594;  a review council, verification panels, and a rule gate — every voice sits on every stage</text>
+
+  <!-- ============ BAND 1 · Review council ============ -->
+  <rect x="28" y="96" width="944" height="168" rx="12" fill="#161b22" stroke="#30363d"/>
+  <text x="52" y="128" class="ch">Review council</text>
+  <text x="948" y="128" text-anchor="end" class="mut">the Karpathy shape — synthesis</text>
+
+  <rect x="52" y="152" width="200" height="48" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="152" y="173" text-anchor="middle" fill="#cae0ff" font-size="13">the change under review</text>
+  <text x="152" y="191" text-anchor="middle" class="mut" font-size="11.5">git diff &#183; files &#183; prompt-file</text>
+
+  <path d="M258 171 l12 5 l-12 5" fill="none" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="278" y="152" width="140" height="48" rx="8" fill="#12233f" stroke="#2f6feb"/>
+  <text x="348" y="173" text-anchor="middle" fill="#cae0ff" font-size="13.5" font-weight="600">1 &#183; opinions</text>
+  <text x="348" y="191" text-anchor="middle" class="mut" font-size="11.5">all voices, parallel</text>
+
+  <path d="M424 171 l12 5 l-12 5" fill="none" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="444" y="152" width="170" height="48" rx="8" fill="#12233f" stroke="#2f6feb"/>
+  <text x="529" y="173" text-anchor="middle" fill="#cae0ff" font-size="13.5" font-weight="600">2 &#183; anonymous rank</text>
+  <text x="529" y="191" text-anchor="middle" class="mut" font-size="11.5">blind labels &#8594; Borda</text>
+
+  <path d="M620 171 l12 5 l-12 5" fill="none" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="640" y="152" width="130" height="48" rx="8" fill="#241a3a" stroke="#8957e5"/>
+  <text x="705" y="173" text-anchor="middle" fill="#d2b8ff" font-size="13.5" font-weight="600">3 &#183; chairman</text>
+  <text x="705" y="191" text-anchor="middle" class="mut" font-size="11.5">one voice writes</text>
+
+  <path d="M776 171 l12 5 l-12 5" fill="none" stroke="#58a6ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="796" y="152" width="152" height="48" rx="8" fill="#21262d" stroke="#6e7681"/>
+  <text x="872" y="173" text-anchor="middle" fill="#e6edf3" font-size="13.5" font-weight="600">SYNTHESIS</text>
+  <text x="872" y="191" text-anchor="middle" class="mono" fill="#e3b341" font-size="12">verdict: FIX</text>
+
+  <text x="52" y="240" class="mut">every voice reviews independently &#183; each ranks the others blind (labels shuffled by content hash — nobody can favour their own) &#183; one chairman synthesizes</text>
+
+  <!-- split arrows down to the two panels -->
+  <path d="M872 264 v22" stroke="#6e7681" stroke-width="1.8"/>
+  <path d="M254 286 h618" stroke="#6e7681" stroke-width="1.8"/>
+  <path d="M254 286 v16" stroke="#6e7681" stroke-width="1.8"/>
+  <path d="M249 295 l5 7 l5 -7" fill="none" stroke="#6e7681" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M746 286 v16" stroke="#6e7681" stroke-width="1.8"/>
+  <path d="M741 295 l5 7 l5 -7" fill="none" stroke="#6e7681" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ BAND 2 · Audit panel ============ -->
+  <rect x="28" y="312" width="452" height="250" rx="12" fill="#161b22" stroke="#30363d"/>
+  <text x="52" y="344" class="ch">Audit panel</text>
+  <text x="456" y="344" text-anchor="end" class="mut">every voice &#183; independent &#183; parallel</text>
+  <text x="52" y="368" class="mut">each compares the synthesis against the raw reviews:</text>
+  <text x="52" y="384" class="mut">hallucinated &#183; dropped &#183; inflated findings &#183; fake consensus</text>
+
+  <rect x="52" y="398" width="126" height="52" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="115" y="419" text-anchor="middle" class="lab">claude</text>
+  <text x="115" y="440" text-anchor="middle" class="mono" fill="#56d364" font-size="13">CLEAN</text>
+  <rect x="190" y="398" width="126" height="52" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="253" y="419" text-anchor="middle" class="lab">codex</text>
+  <text x="253" y="440" text-anchor="middle" class="mono" fill="#56d364" font-size="13">CLEAN</text>
+  <rect x="328" y="398" width="126" height="52" rx="8" fill="#2d1215" stroke="#f85149"/>
+  <text x="391" y="419" text-anchor="middle" class="lab">grok</text>
+  <text x="391" y="440" text-anchor="middle" class="mono" fill="#f85149" font-size="13" font-weight="700">INVALID</text>
+
+  <rect x="52" y="468" width="402" height="40" rx="8" fill="#1a1f27" stroke="#30363d"/>
+  <text x="68" y="493" class="mono" fill="#e6edf3" font-size="13">worst-wins:  INVALID &#8250; ISSUES &#8250; CLEAN  &#8594;  <tspan fill="#f85149" font-weight="700">INVALID</tspan></text>
+
+  <text x="52" y="540" class="mut">one credible catch cannot be outvoted by the majority.</text>
+
+  <!-- ============ BAND 2 · Redteam panel ============ -->
+  <rect x="520" y="312" width="452" height="250" rx="12" fill="#161b22" stroke="#30363d"/>
+  <text x="544" y="344" class="ch">Redteam panel</text>
+  <text x="948" y="344" text-anchor="end" class="mut">every voice &#183; independent &#183; parallel</text>
+  <text x="544" y="368" class="mut">each attacks the findings — tries to refute them with</text>
+  <text x="544" y="384" class="mut">counter-evidence from the diff itself.</text>
+
+  <rect x="544" y="398" width="126" height="52" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="607" y="419" text-anchor="middle" class="lab">claude</text>
+  <text x="607" y="440" text-anchor="middle" class="mono" fill="#56d364" font-size="13">HOLDS</text>
+  <rect x="682" y="398" width="126" height="52" rx="8" fill="#2b2111" stroke="#e3b341"/>
+  <text x="745" y="419" text-anchor="middle" class="lab">codex</text>
+  <text x="745" y="440" text-anchor="middle" class="mono" fill="#e3b341" font-size="13" font-weight="700">WEAK</text>
+  <rect x="820" y="398" width="126" height="52" rx="8" fill="#21262d" stroke="#30363d"/>
+  <text x="883" y="419" text-anchor="middle" class="lab">grok</text>
+  <text x="883" y="440" text-anchor="middle" class="mono" fill="#56d364" font-size="13">HOLDS</text>
+
+  <rect x="544" y="468" width="402" height="40" rx="8" fill="#1a1f27" stroke="#30363d"/>
+  <text x="560" y="493" class="mono" fill="#e6edf3" font-size="13">worst-wins:  REFUTED &#8250; WEAK &#8250; HOLDS  &#8594;  <tspan fill="#e3b341" font-weight="700">WEAK</tspan></text>
+
+  <text x="544" y="540" class="mut">panelists never see each other&#8217;s attack — independence.</text>
+
+  <!-- ============ mechanical strip ============ -->
+  <rect x="28" y="578" width="944" height="36" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="52" y="601" class="mut">mechanical checks — deterministic greps, <tspan fill="#adbac7">zero model calls</tspan> (phantom files &#183; severity structure)</text>
+  <text x="948" y="601" text-anchor="end" class="mut">runs alongside both panels</text>
+
+  <path d="M500 622 v14" stroke="#6e7681" stroke-width="1.8"/>
+  <path d="M495 629 l5 7 l5 -7" fill="none" stroke="#6e7681" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- ============ BAND 3 · Gate ============ -->
+  <rect x="28" y="644" width="944" height="116" rx="12" fill="#161b22" stroke="#30363d"/>
+  <text x="52" y="676" class="ch">Gate — pure rules, zero models</text>
+  <text x="52" y="706" class="mono" fill="#e6edf3" font-size="13">clean &#8660; audit = CLEAN &#8743; redteam &#8712; { HOLDS, skipped }</text>
+  <text x="52" y="728" class="mono" fill="#8b949e" font-size="12">no parseable verdicts &#8594; UNAVAILABLE &#183; fail-closed, an LLM cannot soften it</text>
+
+  <rect x="668" y="662" width="130" height="36" rx="8" fill="#0f2e1b" stroke="#238636"/>
+  <text x="733" y="685" text-anchor="middle" fill="#56d364" font-size="14" font-weight="600">&#10003; CLEAN</text>
+  <text x="733" y="716" text-anchor="middle" class="mut" font-size="11.5">present as final</text>
+
+  <rect x="812" y="662" width="136" height="36" rx="8" fill="#2b2111" stroke="#e3b341"/>
+  <text x="880" y="685" text-anchor="middle" fill="#e3b341" font-size="14" font-weight="600">&#9888; DEGRADED</text>
+  <text x="880" y="716" text-anchor="middle" class="mut" font-size="11.5">hand-verify first</text>
+
+  <!-- ============ artifacts ============ -->
+  <text x="500" y="790" text-anchor="middle" class="mono" fill="#adbac7" font-size="12">SYNTHESIS.md &#183; v-*.md &#183; a-*.md &#183; r-*.md &#183; AUDIT_VERDICT.md &#183; REDTEAM_VERDICT.md &#183; MECHANICAL.md &#183; pipeline-status.json</text>
+  <text x="500" y="812" text-anchor="middle" class="mut">every panelist&#8217;s raw output is preserved — dissent is a signal, never filtered</text>
+
+  <!-- ============ bottom strip ============ -->
+  <line x1="28" y1="836" x2="972" y2="836" stroke="#30363d" stroke-width="1"/>
+  <text x="500" y="864" text-anchor="middle" fill="#8b949e" font-size="13.5">
+    <tspan fill="#adbac7">every voice, every stage</tspan><tspan fill="#484f58">    ·    </tspan><tspan fill="#adbac7">panelists are independent</tspan><tspan fill="#484f58">    ·    </tspan><tspan fill="#adbac7">an LLM can be argued into softening a gate — a rule cannot</tspan>
+  </text>
+</svg>

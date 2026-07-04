@@ -22,6 +22,62 @@ class Config:
     providers: dict[str, Provider]
     timeout: float | None = None  # None = per-voice (providers.resolve_timeout); a value overrides all
     source: str = "defaults (native-only)"
+    # [review] — default verification panels for `council review` (empty = bare
+    # council review, status "unverified"). Every listed voice audits/attacks the
+    # synthesis independently; verdicts aggregate worst-wins (see audit.py).
+    review_audit: list[str] = dataclasses.field(default_factory=list)
+    review_redteam: list[str] = dataclasses.field(default_factory=list)
+
+
+def _http_provider(name: str, over: dict) -> Provider:
+    """Build a token-based (http) voice from a `type = "http"` council.toml block.
+    Missing required fields fail loudly here rather than at first call. The API key
+    is NOT one of these fields — it lives in the env var named by `key_env`."""
+    missing = [k for k in ("endpoint", "model", "key_env") if not over.get(k)]
+    if missing:
+        raise ValueError(
+            f"council.toml [providers.{name}] is type=\"http\" but missing {missing}; "
+            f"an http voice needs endpoint, model, and key_env "
+            f"(the API key stays in that env var — never write it here)")
+    key_env = str(over["key_env"])
+    from .providers import DEFAULT_MAX_OUTPUT_TOKENS
+    return Provider(
+        name=name,
+        transport="http",
+        endpoint=str(over["endpoint"]),
+        model=str(over["model"]),
+        key_env=key_env,
+        max_output_tokens=int(over["max_tokens"]) if "max_tokens" in over else DEFAULT_MAX_OUTPUT_TOKENS,
+        timeout=float(over["timeout"]) if "timeout" in over else 0.0,
+        experimental=bool(over.get("experimental", False)),
+        install_hint=over.get("install_hint")
+        or f"token voice — get an API key for {name}, then: export {key_env}=<key>",
+        login_hint=over.get("login_hint") or f"export {key_env}=<your {name} API key>",
+    )
+
+
+def _build_providers(data: dict) -> dict[str, Provider]:
+    """Merge the shipped CLI voices with anything a council.toml declares.
+
+    Per-provider blocks: `type = "http"` DEFINES a new token-based voice from
+    scratch (opt-in; endpoint + model + key-env, key stays in the env var). Any
+    other block OVERRIDES an existing CLI voice's argv/bin/timeout (a custom
+    install path, a flag fix, or a slower ceiling for one voice)."""
+    providers = dict(PROVIDERS)
+    for name, over in (data.get("providers") or {}).items():
+        if over.get("type") == "http":
+            providers[name] = _http_provider(name, over)
+            continue
+        base = providers.get(name)
+        if base is None:
+            continue
+        providers[name] = dataclasses.replace(
+            base,
+            bin=over.get("bin", base.bin),
+            argv=list(over["argv"]) if "argv" in over else base.argv,
+            timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
+        )
+    return providers
 
 
 def _find(path: str | None) -> Path | None:
@@ -35,27 +91,26 @@ def _find(path: str | None) -> Path | None:
     return None
 
 
-def load(path: str | None = None) -> Config:
-    providers = dict(PROVIDERS)
+def provider_registry(path: str | None = None) -> dict[str, Provider]:
+    """The merged voice table (built-in CLI voices + any http voices a council.toml
+    defines), WITHOUT enrolling or validating `voices`/`chairman`. This is what the
+    detect/smoke tools need: they want to know a voice exists before it's enrolled."""
     cfg_file = _find(path)
     if cfg_file is None:
-        return Config(voices=["claude"], chairman="claude", providers=providers)
+        return dict(PROVIDERS)
+    if tomllib is None:  # pragma: no cover
+        raise RuntimeError("council.toml found but Python < 3.11 has no tomllib; upgrade Python.")
+    return _build_providers(tomllib.loads(cfg_file.read_text()))
+
+
+def load(path: str | None = None) -> Config:
+    cfg_file = _find(path)
+    if cfg_file is None:
+        return Config(voices=["claude"], chairman="claude", providers=dict(PROVIDERS))
     if tomllib is None:  # pragma: no cover
         raise RuntimeError("council.toml found but Python < 3.11 has no tomllib; upgrade Python.")
     data = tomllib.loads(cfg_file.read_text())
-
-    # Per-provider argv/bin/timeout overrides (e.g. a custom install path, a flag
-    # fix, or a slower ceiling for one voice).
-    for name, over in (data.get("providers") or {}).items():
-        base = providers.get(name)
-        if base is None:
-            continue
-        providers[name] = dataclasses.replace(
-            base,
-            bin=over.get("bin", base.bin),
-            argv=list(over["argv"]) if "argv" in over else base.argv,
-            timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
-        )
+    providers = _build_providers(data)
 
     council = data.get("council") or {}
     voices = list(council.get("voices") or ["claude"])
@@ -63,11 +118,20 @@ def load(path: str | None = None) -> Config:
     # Absent → None → each voice uses its own ceiling. Present → global override.
     timeout = float(council["timeout"]) if "timeout" in council else None
 
+    review = data.get("review") or {}
+    review_audit = list(review.get("audit") or [])
+    review_redteam = list(review.get("redteam") or [])
+
     unknown = [v for v in voices if v not in providers]
     if unknown:
         raise ValueError(f"council.toml enrols unknown voices {unknown}; known: {sorted(providers)}")
     if chairman not in providers:
         raise ValueError(f"council.toml chairman '{chairman}' is not a known provider")
+    bad_panel = [v for v in review_audit + review_redteam if v not in providers]
+    if bad_panel:
+        raise ValueError(f"council.toml [review] names unknown voices {bad_panel}; "
+                         f"known: {sorted(providers)}")
 
     return Config(voices=voices, chairman=chairman, providers=providers,
-                  timeout=timeout, source=str(cfg_file))
+                  timeout=timeout, source=str(cfg_file),
+                  review_audit=review_audit, review_redteam=review_redteam)

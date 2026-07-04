@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
-![API keys: none](https://img.shields.io/badge/API%20keys-none-orange.svg)
+![API keys: optional](https://img.shields.io/badge/API%20keys-optional-orange.svg)
 
 Ask one question. Several models answer, **anonymously rank each other**, and a
 chairman writes the final answer — using the **official CLIs you already pay
@@ -18,12 +18,16 @@ rebuilt from scratch on a different substrate: **subscriptions, not API keys.**
 
 ## Why it's different
 
-- **No API keys. Ever.** cli-council sends zero HTTP requests to any model
-  provider and stores zero credentials. It shells out to the official
-  first-party CLIs — `claude`, `codex`, `grok`, `gemini` — that you installed and
-  logged into yourself. Your subscription, your machine, your auth.
-- **Zero runtime dependencies.** Pure Python standard library + `subprocess`.
-  Nothing to `pip install`, no SDK, no network stack.
+- **No API keys by default.** Out of the box, cli-council sends zero HTTP
+  requests to any model provider and stores zero credentials. It shells out to
+  the official first-party CLIs — `claude`, `codex`, `grok`, `gemini` — that you
+  installed and logged into yourself. Your subscription, your machine, your auth.
+  _(You **can** add a token-based API voice if you want one — strictly opt-in,
+  configured only in your own git-ignored `council.toml`, key kept in an env var.
+  See [Token voices](#token-voices-optional). The default path never needs it.)_
+- **Zero runtime dependencies.** Pure Python standard library + `subprocess`
+  (plus stdlib `urllib` for the optional token path). Nothing to `pip install`,
+  no SDK.
 - **Native by default.** Out of the box the council is just **Claude** (via
   Claude Code, which is built for exactly this headless use). Every other voice
   is **opt-in** — add as many as you have subscriptions for.
@@ -111,6 +115,67 @@ council --chairman codex "your question"     # pick who synthesises
 council --voices claude,grok "your question" # ad-hoc subset of enrolled voices
 ```
 
+## Review mode
+
+The same council, pointed at a code change instead of a question. Voices review,
+anonymously peer-rank each other's **reviews**, and a chairman synthesises one
+review with a verdict (`SHIP` / `SHIP-WITH-EDITS` / `FIX` / `REWORK`) and findings
+grouped by severity (`BLOCKER` / `IMPORTANT` / `CHECK` / `ACCEPT` / `NOISE`) —
+then, optionally, **verification panels** check the synthesis itself and a rule
+gate decides whether the pipeline is clean.
+
+<p align="center">
+  <img src="docs/review-pipeline.svg" alt="Review mode — review council, audit and redteam panels, rule gate, artifacts" width="920">
+</p>
+
+```bash
+council review                       # review uncommitted changes (git diff HEAD)
+council review main                  # review the working tree against a ref
+council review --files a.py b.py     # review whole files instead of a diff
+council review --prompt-file r.md    # use a prepared review prompt verbatim
+council review --out ./out HEAD      # also write the full artifact set (see below)
+council review --audit codex,grok --redteam grok HEAD   # ad-hoc panels
+council review --no-verify HEAD      # bare council review, skip configured panels
+```
+
+`review` is a subcommand, so `council "…"` (ask) is unchanged. The big review
+prompt reaches each voice through its normal transport — `claude`/`codex` on
+stdin, `grok` via its prompt file, a token voice in the request body — so a large
+diff isn't an argument-length problem.
+
+### Verification panels — every voice checks, a rule decides
+
+A synthesis can hallucinate a finding, drop one, or invent consensus. So after
+the council, two **panels** verify it — and a panel is deliberately _not_ another
+council:
+
+- **Audit panel** — every audit voice independently compares the synthesis
+  against the raw reviews (hallucinated / dropped / inflated findings, fake
+  consensus). Verdicts: `CLEAN` / `ISSUES` / `INVALID`.
+- **Redteam panel** — every redteam voice independently attacks the findings,
+  trying to refute them with counter-evidence. Verdicts: `HOLDS` / `WEAK` /
+  `REFUTED`.
+- **Mechanical checks** — deterministic greps (phantom files, severity
+  structure), zero model calls.
+
+Panelists never see each other's output, and the panel verdict is aggregated by
+a **worst-wins rule**, not by a chairman: any single `INVALID` makes the audit
+`INVALID`; any `REFUTED` makes the redteam `REFUTED`. One credible catch cannot
+be outvoted, out-ranked, or synthesized away — and a rule, unlike an LLM, cannot
+be talked into softening. The **gate** is then pure rules: the pipeline is
+`clean` only when audit is `CLEAN` and redteam `HOLDS` (or wasn't run); anything
+else is `degraded` with reasons listed; no panels configured = `unverified`.
+
+<p align="center">
+  <img src="docs/council-vs-panel.svg" alt="Two primitives — council (synthesis) vs panel (rule-aggregated gate)" width="920">
+</p>
+
+With `--out`, the full evidence set is persisted — every panelist's raw output
+included, so a lone dissent stays visible: `SYNTHESIS.md`, `v-<voice>.md`
+(reviews), `a-<voice>.md` / `r-<voice>.md` (panelists), `AUDIT_VERDICT.md`,
+`REDTEAM_VERDICT.md`, `MECHANICAL.md`, `RANKINGS.md`, machine-readable
+`pipeline-status.json`, and a `PIPELINE_DEGRADED.md` marker when not clean.
+
 ## Configure
 
 Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
@@ -124,6 +189,41 @@ Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
   peer-ranking prompt carries every other answer and takes longer. Set it to
   force one ceiling on every voice, or override a single voice under
   `[providers.<name>]`.
+- **`[review]`** — default verification panels for `council review`
+  (`--audit`/`--redteam` override them per run, `--no-verify` skips both):
+
+  ```toml
+  [review]
+  audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw reviews
+  redteam = ["codex", "grok"]             # panel: adversarial attack on findings
+  ```
+
+### Token voices (optional)
+
+The default council is subscription-CLI only and needs no keys. If you'd rather
+add a voice you _don't_ have a CLI for, you can point cli-council at any
+**OpenAI-compatible** `/chat/completions` API by declaring a `type = "http"`
+provider in your `council.toml`:
+
+```toml
+[providers.deepseek]
+type     = "http"
+endpoint = "https://api.deepseek.com/v1/chat/completions"
+model    = "deepseek-chat"
+key_env  = "DEEPSEEK_API_KEY"   # cli-council reads the key from THIS env var — never from the file
+
+[council]
+voices   = ["claude", "codex", "deepseek"]
+chairman = "claude"
+```
+
+The API key is read from the named environment variable **at call time** — it is
+never written to `council.toml`, never logged, and never stored. The transport is
+still stdlib-only (`urllib`), so there's nothing new to install. Verify a token
+voice before enrolling it, exactly like a CLI voice: `doctor smoke deepseek`
+(PASS = key present **and** the endpoint answers). DeepSeek, Mistral, Groq,
+SiliconFlow, NVIDIA NIM, and DashScope's OpenAI-compatible mode all speak this
+shape; see [council.example.toml](council.example.toml) for more examples.
 
 ## Status
 
@@ -134,7 +234,13 @@ ones that answer; in testing it refused a retired-tier `gemini` and a
 misconfigured `codex` **loudly** rather than half-adding them, and a voice that
 dies mid-council is likewise dropped while the rest carry on. `gemini` is
 structurally supported, but some Google tiers are retired in favour of `agy`, so
-like everything else it's gated by its own smoke. Contributions welcome.
+like everything else it's gated by its own smoke. The optional token (`http`)
+transport is verified live too — a `type = "http"` voice made a real
+OpenAI-compatible call and its answer flowed through ranking and synthesis like
+any CLI voice. The review pipeline is exercised by a smoke matrix through the
+real CLI (clean / worst-wins dissent / refuted / dead panelists / all-dead
+fail-closed / loud failures) plus a live end-to-end run — council, both panels,
+gate, artifacts. Contributions welcome.
 
 ## License
 

@@ -2,14 +2,23 @@
 
 > Ask one question; several first-party model CLIs (Claude, Codex, Grok,
 > Gemini/Antigravity) answer, anonymously rank each other, and a chairman
-> synthesises the final answer. No API keys, no HTTP, zero runtime dependencies —
-> it only shells out to the official CLIs you already installed and authenticated.
+> synthesises the final answer. No API keys by default, zero runtime dependencies
+> — it shells out to the official CLIs you already installed and authenticated. An
+> OpenAI-compatible token voice is optional and opt-in (key from an env var).
 
 cli-council is an independent, clean-room reimplementation of the "LLM council"
 idea (first opinions → anonymized peer ranking → chairman synthesis) on a
 **subscription-CLI substrate** instead of a paid HTTP API. Native-default —
 Claude works out of the box; every other voice is opt-in behind a strict,
 smoke-gated install contract that never enrols a voice it hasn't proven answers.
+A voice can optionally be a token-based OpenAI-compatible API call instead of a
+CLI, configured only in your local council.toml with the key kept in an env var.
+The engine is mode-aware and built from two primitives: a COUNCIL (Karpathy:
+opinions → anonymized peer-rank → chairman synthesis) for answers and reviews,
+and a PANEL (every voice independently, worst-wins rule aggregation, no
+chairman) for gates. `council "question"` asks; `council review [ref]` reviews a
+code change, then optional audit/redteam panels verify the synthesis and a pure
+rule gate reports clean / degraded / unverified (fail-closed).
 
 ## Docs
 
@@ -19,8 +28,12 @@ smoke-gated install contract that never enrols a voice it hasn't proven answers.
 
 ## Code
 
-- [council/stages.py](council/stages.py): the three council stages — first opinions, anonymized peer ranking, chairman synthesis, with loud-fail on any voice.
-- [council/providers.py](council/providers.py): the subscription-CLI provider table; each voice is a subprocess to an official CLI, with per-voice timeouts.
+- [council/stages.py](council/stages.py): the three council stages — first opinions, anonymized peer ranking, chairman synthesis, with loud-fail on any voice; a `Mode` chooses the ranking/chairman wording (ask vs review), the engine is shared.
+- [council/review.py](council/review.py): review mode — build a review prompt from a git diff / files / prompt-file, run the council with review wording, synthesise one review with a verdict (SHIP/…/REWORK) and BLOCKER/IMPORTANT/CHECK/ACCEPT/NOISE severities.
+- [council/panel.py](council/panel.py): the PANEL primitive — every voice gets the same prompt independently and in parallel; verdicts aggregate worst-wins (a rule can't be talked into softening; a lone credible catch can't be outvoted).
+- [council/audit.py](council/audit.py): verification layer — audit panel (synthesis vs raw reviews), redteam panel (adversarial attack on findings), mechanical greps, and the pure-rule gate (clean ⇔ audit CLEAN ∧ redteam HOLDS/skipped; fail-closed).
+- [council/pipeline.py](council/pipeline.py): the one-call review pipeline (council → panels → gate) — the library entry point; returns status clean / degraded / unverified with reasons.
+- [council/providers.py](council/providers.py): the provider table and two transports — a subprocess to an official CLI (default), or an opt-in stdlib-`urllib` call to an OpenAI-compatible endpoint (key from an env var); per-voice timeouts.
 - [council/aggregate.py](council/aggregate.py): strict `FINAL RANKING` parse (exact permutation or reported failure) + Borda leaderboard + critique extraction.
 - [installer/doctor.py](installer/doctor.py): the deterministic install gates — detect, smoke, smoke-gated enroll, list.
 

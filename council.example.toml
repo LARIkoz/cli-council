@@ -20,3 +20,42 @@ chairman = "claude"
 # bin = "grok"
 # argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]
 # timeout = 900
+
+# ── Optional: review verification panels ────────────────────────────────────
+# `council review` runs the Karpathy council (reviews → anonymous peer-ranking →
+# chairman synthesis), then these PANELS verify the synthesis: every listed voice
+# audits/attacks it INDEPENDENTLY and in parallel (nobody sees anybody else), and
+# the verdict aggregates worst-wins — a rule, not a chairman, so no model can
+# soften the gate. Any INVALID → INVALID; redteam WEAK/REFUTED → degraded.
+# Empty/absent = bare council review (status "unverified").
+# [review]
+# audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw reviews
+# redteam = ["codex", "grok"]             # panel: adversarial attack on findings
+
+# ── Optional: token voices (opt-in) ──────────────────────────────────────────
+# The default council is subscription-CLI only and needs no keys. If you'd rather
+# add a voice via its API, declare it with `type = "http"`. cli-council POSTs to
+# an OpenAI-compatible /chat/completions endpoint and reads the API key from the
+# environment variable you name in `key_env` — the KEY IS NEVER WRITTEN HERE and
+# never logged. Then list the voice in [council] voices above.
+#
+# Verify it before enrolling:  doctor smoke deepseek   (PASS = key set + endpoint answers)
+#
+# [providers.deepseek]
+# type     = "http"
+# endpoint = "https://api.deepseek.com/v1/chat/completions"
+# model    = "deepseek-chat"
+# key_env  = "DEEPSEEK_API_KEY"     # export DEEPSEEK_API_KEY=... in your shell
+# timeout  = 120
+#
+# [providers.mistral]
+# type     = "http"
+# endpoint = "https://api.mistral.ai/v1/chat/completions"
+# model    = "mistral-large-latest"
+# key_env  = "MISTRAL_API_KEY"
+#
+# [providers.qwen]                  # DashScope's OpenAI-compatible mode
+# type     = "http"
+# endpoint = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
+# model    = "qwen-max"
+# key_env  = "DASHSCOPE_API_KEY"

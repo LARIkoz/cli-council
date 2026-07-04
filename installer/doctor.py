@@ -18,18 +18,30 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from council import config as councilcfg  # noqa: E402
 from council.providers import PROVIDERS, invoke, is_installed  # noqa: E402
 
 SMOKE_PROMPT = "Reply with exactly the word: ok"
 CONFIG = Path.cwd() / "council.toml"
 
 
+def _registry() -> dict:
+    """Every voice this machine knows: the built-in CLI voices plus any http
+    (token) voices defined in council.toml. Falls back to the built-ins if the
+    file is unreadable/half-written, so detect/enroll still work."""
+    try:
+        return councilcfg.provider_registry(str(CONFIG) if CONFIG.is_file() else None)
+    except Exception:  # noqa: BLE001 — a broken toml shouldn't hide the CLI voices
+        return dict(PROVIDERS)
+
+
 def detect() -> int:
-    print("Detected provider CLIs:")
-    for name, p in PROVIDERS.items():
+    print("Detected voices (CLI + any token voices in council.toml):")
+    for name, p in _registry().items():
+        kind = "http" if p.transport == "http" else "cli"
         tag = " (native default)" if p.native else (" (experimental)" if p.experimental else "")
-        state = "installed" if is_installed(p) else "MISSING"
-        print(f"  {name:8} {state:9}{tag}")
+        state = "ready" if is_installed(p) else "MISSING"
+        print(f"  {name:10} {kind:5} {state:8}{tag}")
         if not is_installed(p):
             print(f"           install: {p.install_hint}")
             print(f"           login:   {p.login_hint}")
@@ -46,9 +58,10 @@ def _smoke(p) -> tuple[bool, str]:
 
 
 def smoke(voice: str) -> int:
-    p = PROVIDERS.get(voice)
+    reg = _registry()
+    p = reg.get(voice)
     if p is None:
-        print(f"unknown voice '{voice}'; known: {sorted(PROVIDERS)}", file=sys.stderr)
+        print(f"unknown voice '{voice}'; known: {sorted(reg)}", file=sys.stderr)
         return 2
     print(f"smoking {voice} (1 live call)…", file=sys.stderr)
     ok, detail = _smoke(p)
@@ -61,9 +74,10 @@ def smoke(voice: str) -> int:
 
 
 def enroll(voices: list[str], verify: bool = True) -> int:
-    unknown = [v for v in voices if v not in PROVIDERS]
+    reg = _registry()
+    unknown = [v for v in voices if v not in reg]
     if unknown:
-        print(f"unknown voices {unknown}; known: {sorted(PROVIDERS)}", file=sys.stderr)
+        print(f"unknown voices {unknown}; known: {sorted(reg)}", file=sys.stderr)
         return 2
 
     if verify:
@@ -74,12 +88,12 @@ def enroll(voices: list[str], verify: bool = True) -> int:
         # just smoked these voices in the previous gate and want to skip the cost.
         kept = []
         for v in voices:
-            ok, detail = _smoke(PROVIDERS[v])
+            ok, detail = _smoke(reg[v])
             print(f"  {'PASS' if ok else 'FAIL'} · {v}: {detail}", file=sys.stderr)
             if ok:
                 kept.append(v)
             else:
-                print(f"refused — NOT enrolling '{v}' (failed smoke). {PROVIDERS[v].login_hint}")
+                print(f"refused — NOT enrolling '{v}' (failed smoke). {reg[v].login_hint}")
         voices = kept
         if not voices:
             print("no voice passed smoke — nothing enrolled. Fix install/login and retry.",
@@ -92,7 +106,9 @@ def enroll(voices: list[str], verify: bool = True) -> int:
         print("note: 'claude' (native default) not in the list — that's allowed, "
               "but the out-of-box guarantee is Claude. Continuing with your choice.")
     chairman = "claude" if "claude" in voices else voices[0]
-    CONFIG.write_text(_toml(voices, chairman))
+    # Preserve any hand-written [providers.*] blocks (e.g. http/token voices) —
+    # enroll only owns the [council] section, it must not erase your voice defs.
+    CONFIG.write_text(_toml(voices, chairman) + _existing_provider_blocks())
     print(f"wrote {CONFIG}")
     print(f"  voices   = {voices}")
     print(f"  chairman = {chairman}")
@@ -103,15 +119,17 @@ def enroll(voices: list[str], verify: bool = True) -> int:
 def list_voices() -> int:
     enrolled = _read_enrolled()
     print("Voices:")
-    for name, p in PROVIDERS.items():
+    for name, p in _registry().items():
         marks = []
         if p.native:
             marks.append("native")
+        if p.transport == "http":
+            marks.append("token")
         if name in enrolled:
             marks.append("ENROLLED")
         if is_installed(p):
-            marks.append("installed")
-        print(f"  {name:8} {'· '.join(marks) or 'available'}")
+            marks.append("ready")
+        print(f"  {name:10} {'· '.join(marks) or 'available'}")
     return 0
 
 
@@ -131,6 +149,42 @@ def _toml(voices: list[str], chairman: str) -> str:
             "[council]\n"
             f"voices = [{vs}]\n"
             f'chairman = "{chairman}"\n')
+
+
+def _emit_toml_value(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    if isinstance(v, list):
+        return "[" + ", ".join(_emit_toml_value(x) for x in v) + "]"
+    s = str(v).replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{s}"'
+
+
+def _emit_provider_blocks(providers_data: dict) -> str:
+    """Re-serialize the [providers.*] tables so `enroll` can rewrite [council]
+    without dropping the user's voice definitions. Flat key=value only — that's
+    all a provider block ever holds (type/endpoint/model/key_env/argv/timeout/…)."""
+    out = []
+    for name, block in providers_data.items():
+        if not isinstance(block, dict):
+            continue
+        out.append(f"\n[providers.{name}]")
+        for k, val in block.items():
+            out.append(f"{k} = {_emit_toml_value(val)}")
+    return "\n".join(out) + ("\n" if out else "")
+
+
+def _existing_provider_blocks() -> str:
+    if not CONFIG.is_file():
+        return ""
+    try:
+        import tomllib
+        data = tomllib.loads(CONFIG.read_text())
+    except Exception:  # noqa: BLE001 — unreadable file: nothing to preserve
+        return ""
+    return _emit_provider_blocks(data.get("providers") or {})
 
 
 def main(argv: list[str]) -> int:

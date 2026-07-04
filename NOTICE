@@ -17,10 +17,14 @@ a paid HTTP API aggregator. All code here is original and MIT-licensed.
 
 What this is NOT
 ----------------
-- Not an API client. It sends no HTTP requests to any model provider and stores
-  no API keys.
-- Not a credential tool. It never reads, stores, or transmits your logins. It
-  only invokes CLIs that you installed and authenticated yourself, through each
-  vendor's own official flow.
-- Not account sharing. Each user brings their own authenticated CLIs on their
-  own machine.
+- Not an API client by default. Out of the box it sends no HTTP requests to any
+  model provider and needs no API keys. A voice can optionally be a token-based
+  OpenAI-compatible API call, but that is strictly opt-in — declared only in your
+  own local council.toml, with the key read from an environment variable at call
+  time and never stored by cli-council.
+- Not a credential tool. It never reads, stores, or transmits your CLI logins,
+  and it stores no API keys — an opt-in token voice's key stays in your env var.
+  It only invokes CLIs you authenticated yourself (through each vendor's own
+  official flow) and endpoints you configured yourself.
+- Not account sharing. Each user brings their own authenticated CLIs / keys on
+  their own machine.

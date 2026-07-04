@@ -23,6 +23,53 @@ _FINAL = re.compile(r"FINAL RANKING\s*:", re.IGNORECASE)
 # single-letter label so "Response AB" can't be misread as "Response A".
 _ITEM = re.compile(r"^\s*(\d+)\s*[.)]\s*(Response\s+[A-Z])(?![A-Za-z])")
 
+# Lines that merely NAME the verdict field (a heading/label), so the actual
+# verdict sits on the next line — skip them rather than reading them as content.
+_VERDICT_LABELS = {"VERDICT", "OVERALL VERDICT", "FINAL VERDICT", "OVERALL",
+                   "RESULT", "PANEL VERDICT", "OVERALL VERDICT:"}
+
+
+def _verdict_in(cand: str, ordered: list[str]) -> str | None:
+    """Does this one line carry a verdict? Checks the whole line and, if it's a
+    'Label: value' line, both sides — so 'FIX: minor' and 'Verdict: REFUTED' both
+    resolve. Decoration (**, `, >) is stripped first."""
+    parts = [cand]
+    if ":" in cand:
+        head, tail = cand.split(":", 1)
+        parts += [tail.strip(), head.strip()]
+    for p in parts:
+        c = p.upper().strip("*_`#> ").strip()
+        for v in ordered:
+            if c == v or c.startswith(v + " ") or c.startswith(v + ".") or c.startswith(v + ","):
+                return v
+    return None
+
+
+def parse_leading_verdict(text: str, valid) -> str | None:
+    """Extract a verdict enum from the top of model output, tolerantly. Returns
+    the matched verdict (from `valid`) or None.
+
+    Real models don't obey 'put the verdict on the first line': they wrap output
+    in a ``` fence, or write a '## VERDICT' heading first, or 'Verdict: X'. We skip
+    fences, skip a heading/label that only NAMES the verdict field, then read the
+    first real content line. We do NOT mine deeper into prose — a verdict must lead,
+    so 'Summary\\nSHIP' is (correctly) no verdict, not a buried SHIP."""
+    ordered = sorted(valid, key=len, reverse=True)
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("```"):
+            continue
+        body = s.lstrip("#*>-•+ ").strip()
+        if body.upper().strip("*_`:# ").strip() in _VERDICT_LABELS:
+            continue                          # bare "Verdict:" label → check next line
+        m = _verdict_in(body, ordered)
+        if m:
+            return m
+        if s.startswith("#"):
+            continue                          # a heading that isn't a verdict → structure, skip
+        return None                           # first real content line, no verdict → stop
+    return None
+
 
 def parse_ranking(text: str, labels: list[str]) -> tuple[list[str] | None, str]:
     """Return (order best->worst, "ok") or (None, reason)."""

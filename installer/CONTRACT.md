@@ -87,10 +87,14 @@ so you see the council actually work before you rely on it.
   (Claude). It can never end up empty.
 - **Smoke-gated enrolment (enforced in code).** `enroll` itself re-smokes and
   writes only the PASSes, so a voice reaches `council.toml` only after it proves
-  it answers — the guarantee holds even if the caller names a broken voice.
+  it answers — the guarantee holds even if the caller names a broken voice. This
+  covers optional token (`type = "http"`) voices too: their smoke is a real call,
+  and `enroll` preserves the `[providers.*]` blocks it rewrites `[council]` around.
 - **Loud failure.** Missing CLI, failed login, failed smoke, unparseable ranking
   — all surfaced, never swallowed.
-- **No credentials touched.** cli-council installs official CLIs and reads their
-  stdout; it never sees, stores, or forwards a login.
+- **No stored credentials.** cli-council installs official CLIs and reads their
+  stdout; it never sees, stores, or forwards a CLI login. An opt-in token voice's
+  API key is read from the env var you name (`key_env`) at call time and sent only
+  to the endpoint you configured — never written to `council.toml`, never logged.
 - **Re-runnable.** Adding or removing a voice re-runs its gate. `doctor list`
   shows the current state any time.

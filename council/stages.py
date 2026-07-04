@@ -3,10 +3,16 @@
 A voice that errors is recorded in the stage's `errors` and dropped from that
 stage — never silently swallowed. Rankings weight the chairman's synthesis; they
 never remove a voice from the council.
+
+The stages are mode-agnostic: what changes between "ask a question" and "review a
+diff" is the *wording* of the ranking + chairman prompts, carried by a `Mode`.
+The engine (anonymize → rank → Borda → synthesize, loud-fail throughout) is the
+same. `ASK` is the default; `review.REVIEW` is the code-review mode.
 """
 from __future__ import annotations
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from . import aggregate
@@ -30,7 +36,7 @@ FINAL RANKING:
 3. Response B
 
 Question:
-{question}
+{subject}
 
 Answers to rank:
 {blocks}
@@ -47,7 +53,7 @@ agreement that isn't there. Do not mention "Response A/B" labels or the ranking
 mechanics in your final answer; just give the best answer.
 
 User's question:
-{question}
+{subject}
 
 Answers (attributed):
 {answers}
@@ -60,6 +66,19 @@ Peer critiques (each judge's written evaluation; second-order context, not proof
 
 Now write the final answer:
 """
+
+
+@dataclass(frozen=True)
+class Mode:
+    """What makes 'ask' differ from 'review': the ranking + chairman prompt
+    wording. Templates take {subject} (the question or the review target) plus the
+    same stage fields. The engine below is identical across modes."""
+    name: str
+    rank_prompt: str        # {subject}, {blocks}
+    chairman_prompt: str    # {subject}, {answers}, {leaderboard}, {critiques}
+
+
+ASK = Mode(name="ask", rank_prompt=RANK_PROMPT, chairman_prompt=CHAIRMAN_PROMPT)
 
 
 @dataclass
@@ -90,22 +109,27 @@ def _anonymize(opinions: dict[str, str]) -> tuple[str, dict[str, str]]:
 
 def run_council(question: str, voices: list[str], chairman: str,
                 providers: dict[str, Provider], timeout: float | None = None,
-                log=lambda *_: None) -> CouncilResult:
+                mode: Mode = ASK, log=lambda *_: None) -> CouncilResult:
     # `timeout` (from --timeout / council.toml) is an explicit global override;
     # when None, each voice uses its own ceiling (resolve_timeout). Slow voices
     # (codex/grok) thus get their headroom without making fast natives wait.
     res = CouncilResult(question=question, chairman=chairman)
 
-    # Stage 1 — first opinions.
+    # Stage 1 — first opinions (parallel: voices are I/O-bound, not CPU-bound).
     log("stage 1 · first opinions")
-    for v in voices:
-        ok, out = invoke(providers[v], question, resolve_timeout(providers[v], timeout))
-        if ok:
-            res.opinions[v] = out
-            log(f"    {v} ✓")
-        else:
-            res.opinion_errors[v] = out
-            log(f"    {v} ✗ {out}")
+    with ThreadPoolExecutor(max_workers=len(voices)) as pool:
+        futs = {pool.submit(invoke, providers[v], question,
+                            resolve_timeout(providers[v], timeout)): v
+                for v in voices}
+        for fut in as_completed(futs):
+            v = futs[fut]
+            ok, out = fut.result()
+            if ok:
+                res.opinions[v] = out
+                log(f"    {v} ✓")
+            else:
+                res.opinion_errors[v] = out
+                log(f"    {v} ✗ {out}")
     if not res.opinions:
         raise RuntimeError("all voices failed at stage 1: " + "; ".join(res.opinion_errors.values()))
 
@@ -117,25 +141,31 @@ def run_council(question: str, voices: list[str], chairman: str,
         log("only one voice answered — returning its answer directly")
         return res
 
-    # Stage 2 — anonymized peer ranking.
+    # Stage 2 — anonymized peer ranking (parallel, same reason as stage 1).
     log("stage 2 · anonymized ranking")
     blocks, res.label_to_voice = _anonymize(res.opinions)
     labels = sorted(res.label_to_voice)
-    rank_prompt = RANK_PROMPT.format(question=question, blocks=blocks)
-    for v in res.opinions:  # only voices that produced an answer may rank
-        ok, out = invoke(providers[v], rank_prompt, resolve_timeout(providers[v], timeout))
-        if not ok:
-            res.rank_errors.append({"voice": v, "reason": out})
-            log(f"    {v} ✗ {out}")
-            continue
-        res.critiques[v] = aggregate.critique_prose(out)
-        order, reason = aggregate.parse_ranking(out, labels)
-        if order is None:
-            res.rank_errors.append({"voice": v, "reason": reason})
-            log(f"    {v} ⚠ ranking unparseable: {reason}")
-        else:
-            res.orders[v] = order
-            log(f"    {v} ✓")
+    rank_prompt = mode.rank_prompt.format(subject=question, blocks=blocks)
+    rankers = list(res.opinions)  # only voices that produced an answer may rank
+    with ThreadPoolExecutor(max_workers=len(rankers)) as pool:
+        futs = {pool.submit(invoke, providers[v], rank_prompt,
+                            resolve_timeout(providers[v], timeout)): v
+                for v in rankers}
+        for fut in as_completed(futs):
+            v = futs[fut]
+            ok, out = fut.result()
+            if not ok:
+                res.rank_errors.append({"voice": v, "reason": out})
+                log(f"    {v} ✗ {out}")
+                continue
+            res.critiques[v] = aggregate.critique_prose(out)
+            order, reason = aggregate.parse_ranking(out, labels)
+            if order is None:
+                res.rank_errors.append({"voice": v, "reason": reason})
+                log(f"    {v} ⚠ ranking unparseable: {reason}")
+            else:
+                res.orders[v] = order
+                log(f"    {v} ✓")
     res.board = aggregate.leaderboard(res.orders, res.label_to_voice, res.rank_errors)
 
     # Stage 3 — chairman synthesis.
@@ -144,7 +174,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     if chair != chairman:
         log(f"    chairman '{chairman}' had no answer; using '{chair}'")
         res.chairman = chair
-    ok, out = invoke(providers[chair], _chairman_prompt(res), resolve_timeout(providers[chair], timeout))
+    ok, out = invoke(providers[chair], _chairman_prompt(res, mode), resolve_timeout(providers[chair], timeout))
     if ok:
         res.final = out
         log("    ✓")
@@ -157,7 +187,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     return res
 
 
-def _chairman_prompt(res: CouncilResult) -> str:
+def _chairman_prompt(res: CouncilResult, mode: Mode = ASK) -> str:
     answers = "\n\n".join(f"[{v}]\n{a}" for v, a in res.opinions.items())
     if res.board and res.board.rows:
         lb = "\n".join(f"{i}. {r['voice']}  (mean rank {r['mean_rank']}, "
@@ -166,5 +196,5 @@ def _chairman_prompt(res: CouncilResult) -> str:
     else:
         lb = "(no parseable rankings this run — weigh answers on their merits)"
     crit = "\n\n".join(f"— {v} wrote:\n{c}" for v, c in res.critiques.items()) or "(none)"
-    return CHAIRMAN_PROMPT.format(question=res.question, answers=answers,
-                                  leaderboard=lb, critiques=crit)
+    return mode.chairman_prompt.format(subject=res.question, answers=answers,
+                                       leaderboard=lb, critiques=crit)
