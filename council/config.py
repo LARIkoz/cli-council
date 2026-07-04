@@ -56,11 +56,52 @@ def _http_provider(name: str, over: dict) -> Provider:
     )
 
 
+def _argv_list(name: str, over: dict) -> list[str]:
+    """Validate + normalize a council.toml `argv`. It MUST be an array: a bare
+    string would `list()`-explode into per-character args (list("claude -p") →
+    ['c','l','a','u','d','e',' ','-','p']) that pass the truthiness guard, build a
+    broken Provider, and only fail at subprocess time as a cryptic FileNotFoundError
+    on a program named "c". Reject it loudly here — the sibling _http_provider's own
+    "fail loudly rather than at first call" contract."""
+    argv = over["argv"]
+    if not isinstance(argv, list):
+        raise ValueError(
+            f"council.toml [providers.{name}] argv must be an array like "
+            f'["claude", "-p", "--model", "opus"], not a string')
+    return [str(a) for a in argv]
+
+
+def _cli_provider(name: str, over: dict) -> Provider:
+    """Build a NEW subscription-CLI voice from a `type = "cli"` council.toml block —
+    e.g. a second Claude voice pinned to a different model (`claude -p --model opus`
+    vs `--model sonnet`), which an override can't express because the base table has
+    only one `claude`. Needs bin + argv; argv uses the same {prompt}/{prompt_file}/
+    stdin convention as the built-ins. Output is read as plain text (the CLI-native
+    default); a voice needing JSON extraction is a built-in, not a toml definition."""
+    missing = [k for k in ("bin", "argv") if not over.get(k)]
+    if missing:
+        raise ValueError(
+            f"council.toml [providers.{name}] is type=\"cli\" but missing {missing}; "
+            f"a cli voice needs bin and argv (a shell command with a {{prompt}} / "
+            f"{{prompt_file}} slot, or neither to receive the prompt on stdin)")
+    return Provider(
+        name=name, transport="cli", native=bool(over.get("native", False)),
+        bin=str(over["bin"]), argv=_argv_list(name, over),
+        uses_prompt_file=bool(over.get("uses_prompt_file", False)),
+        timeout=float(over["timeout"]) if "timeout" in over else 0.0,
+        experimental=bool(over.get("experimental", False)),
+        install_hint=over.get("install_hint", ""),
+        login_hint=over.get("login_hint", ""),
+    )
+
+
 def _build_providers(data: dict) -> dict[str, Provider]:
     """Merge the shipped CLI voices with anything a council.toml declares.
 
     Per-provider blocks: `type = "http"` DEFINES a new token-based voice from
-    scratch (opt-in; endpoint + model + key-env, key stays in the env var). Any
+    scratch (opt-in; endpoint + model + key-env, key stays in the env var).
+    `type = "cli"` under a NEW name DEFINES a new subscription-CLI voice from
+    scratch (bin + argv — e.g. a second Claude pinned to another model). Any
     other block OVERRIDES an existing CLI voice's argv/bin/timeout (a custom
     install path, a flag fix, or a slower ceiling for one voice)."""
     providers = dict(PROVIDERS)
@@ -68,13 +109,16 @@ def _build_providers(data: dict) -> dict[str, Provider]:
         if over.get("type") == "http":
             providers[name] = _http_provider(name, over)
             continue
+        if over.get("type") == "cli" and name not in providers:
+            providers[name] = _cli_provider(name, over)
+            continue
         base = providers.get(name)
         if base is None:
             continue
         providers[name] = dataclasses.replace(
             base,
             bin=over.get("bin", base.bin),
-            argv=list(over["argv"]) if "argv" in over else base.argv,
+            argv=_argv_list(name, over) if "argv" in over else base.argv,
             timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
         )
     return providers

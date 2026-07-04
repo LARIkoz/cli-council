@@ -89,6 +89,11 @@ change, then anonymously ranked each other's reviews. Synthesize ONE authoritati
 review.
 
 Rules:
+- Code review is a UNION of verifiable bugs, not a consensus vote. Include EVERY
+  distinct finding any reviewer raised — dedupe identical ones, but NEVER drop a
+  real finding merely because only one reviewer raised it or it ranked low. One
+  reviewer catching a genuine bug the others missed is the whole point. (Genuine
+  false-positives still go under ## NOISE with a one-line reason — that is not a drop.)
 - Cite verbatim or omit. Do NOT invent a finding no reviewer raised, and do NOT
   claim agreement that isn't there — if reviewers disagree, say so.
 - Weigh the peer leaderboard as a quality signal only; a lower-ranked review can

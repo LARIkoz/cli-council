@@ -2,6 +2,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from council import config as C
 from council.providers import DEFAULT_TIMEOUT, PROVIDERS, resolve_timeout
@@ -25,7 +26,11 @@ class TestResolveTimeout(unittest.TestCase):
 
 class TestConfigTimeout(unittest.TestCase):
     def test_no_file_is_per_voice(self):
-        cfg = C.load(None)
+        # Isolate load()'s no-file behaviour from filesystem discovery: a real
+        # user (or this box) may have a council.toml at the repo root, which _find
+        # would legitimately pick up. We assert the branch where nothing is found.
+        with patch.object(C, "_find", return_value=None):
+            cfg = C.load(None)
         self.assertIsNone(cfg.timeout)  # None => each voice uses its own ceiling
         self.assertEqual(cfg.voices, ["claude"])
 
