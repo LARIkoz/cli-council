@@ -1,4 +1,4 @@
-"""`python -m council "question"` / `council "question"` — run the council."""
+"""`python3 -m council "question"` / `council "question"` — run the council."""
 from __future__ import annotations
 
 import argparse

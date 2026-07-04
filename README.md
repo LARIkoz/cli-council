@@ -114,6 +114,9 @@ deterministic parts by hand — see [installer/CONTRACT.md](installer/CONTRACT.m
 
 ## Run
 
+`council` lives in `bin/` — put it on your PATH, or call `./bin/council` from the
+repo (both set Python's path for you):
+
 ```bash
 council "your question here"
 council --chairman codex "your question"     # pick who synthesises

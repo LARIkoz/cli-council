@@ -11,10 +11,15 @@ opt-in — add as many as you have subscriptions for.
 
 ## Gates
 
+Run every command below from the **repo root**, with `python3` (macOS and most
+Linux ship Python 3 as `python3`, not `python`). `enroll` writes `council.toml`
+into the current directory, so staying in the repo root keeps the config, the
+gates, and the launcher together.
+
 ### Gate 0 — Detect (never proceed blind)
 
 ```
-python installer/doctor.py detect
+python3 installer/doctor.py detect
 ```
 
 Lists every provider CLI and whether it's installed. The agent reads this before
@@ -55,7 +60,7 @@ cli-council stores no logins. Auth lives wherever each vendor CLI keeps it.
 ### Gate 3 — Smoke (the enrolment gate)
 
 ```
-python installer/doctor.py smoke <voice>
+python3 installer/doctor.py smoke <voice>
 ```
 
 Fires one tiny live call. **PASS** = installed AND authenticated AND actually
@@ -65,15 +70,16 @@ config, and the agent says so out loud. No half-added voices, ever.
 ### Gate 4 — Enrol & dry-run
 
 ```
-python installer/doctor.py enroll claude codex grok      # re-smokes each; writes only the PASSes
-council "What are the trade-offs of WAL mode in SQLite?"  # dry-run the whole council
+python3 installer/doctor.py enroll claude codex grok           # re-smokes each; writes only the PASSes
+./bin/council "What are the trade-offs of WAL mode in SQLite?"  # dry-run the whole council
 ```
 
 `enroll` **re-smokes every voice you name** and writes only the ones that PASS to
 `council.toml` — a voice that fails is refused out loud, never half-added. (Pass
-`--no-verify` to trust the smoke you just ran in Gate 3.) The dry-run then shows
-the three stages end-to-end so you see the council actually work before you rely
-on it.
+`--no-verify` to trust the smoke you just ran in Gate 3.) The dry-run uses the
+`./bin/council` launcher, which puts the repo on Python's path for you; add `bin/`
+to your PATH to call `council` from anywhere. It shows the three stages end-to-end
+so you see the council actually work before you rely on it.
 
 ## Invariants (what the contract guarantees)
 
