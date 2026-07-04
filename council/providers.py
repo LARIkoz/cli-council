@@ -117,7 +117,20 @@ PROVIDERS: dict[str, Provider] = {
     ),
     "grok": Provider(
         name="grok", bin="grok", uses_prompt_file=True,
-        argv=["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"],
+        # grok is AGENTIC: on a review prompt it tries file tools (read_file etc).
+        # In a council there's no repo to read, the tool call stalls, and grok's
+        # internal tool timeout fires SIGALRM → the process dies with rc=142
+        # (128+SIGALRM), not a clean error. --deny blocks those tools at the
+        # PERMISSION layer (the flag maps to Claude-Code --disallowedTools), so the
+        # model gets an instant refusal and answers straight from the prompt; the
+        # --no-* flags strip the rest of the agentic surface (web search, subagents,
+        # planning, alt-screen). NOTE: --deny denies the *call* but keeps the tool in
+        # the set — do NOT use grok's own --disallowed-tools, which REMOVES the tool
+        # and breaks search_replace (it depends on read_file) → agent build crash.
+        argv=["grok", "--prompt-file", "{prompt_file}", "--output-format", "json",
+              "--disable-web-search", "--no-subagents", "--no-plan", "--no-alt-screen",
+              "--deny", "MCPTool(**)", "--deny", "Bash(**)", "--deny", "Read(**)",
+              "--deny", "Write(**)", "--deny", "Edit(**)"],
         extract=_grok_json,
         install_hint="curl -fsSL https://x.ai/cli/install.sh | bash",
         login_hint="grok login",
