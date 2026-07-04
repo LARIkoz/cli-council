@@ -1,5 +1,10 @@
 # cli-council
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)
+![dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
+![API keys: none](https://img.shields.io/badge/API%20keys-none-orange.svg)
+
 Ask one question. Several models answer, **anonymously rank each other**, and a
 chairman writes the final answer — using the **official CLIs you already pay
 for**, not a paid API.
