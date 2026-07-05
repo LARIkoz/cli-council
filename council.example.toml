@@ -28,17 +28,25 @@ chairman = "claude"
 # rejected at load — it would explode into per-character args). Then list the
 # names in [council] voices above.
 #
+# `family` (optional) groups voices by vendor lineage for the `council decide`
+# family quorum — a decision must draw on ≥3 model families, and two voices of one
+# house (opus + sonnet) must count ONCE. Set it on any voice you define; the
+# built-ins already carry theirs (claude=anthropic, codex=openai, grok=xai,
+# gemini/agy=google).
+#
 # [providers.opus]
 # type = "cli"
 # bin  = "claude"
 # argv = ["claude", "-p", "--model", "opus"]
 # native = true
+# family = "anthropic"
 #
 # [providers.sonnet]
 # type = "cli"
 # bin  = "claude"
 # argv = ["claude", "-p", "--model", "sonnet"]
 # native = true
+# family = "anthropic"
 
 # ── Optional: review verification panels ────────────────────────────────────
 # `council review` runs the Karpathy council (reviews → anonymous peer-ranking →
@@ -50,6 +58,17 @@ chairman = "claude"
 # [review]
 # audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw reviews
 # redteam = ["codex", "grok"]             # panel: adversarial attack on findings
+
+# ── Optional: decide verification panels ────────────────────────────────────
+# `council decide` runs the same council (recommendations → peer-ranking → chairman),
+# then verifies. AUDIT is the mandatory guard for a decision — it checks the
+# synthesis is faithful to the raw voices (no invented convergence, misattribution,
+# or action-tier inflation). REDTEAM is OFF by default (leave it empty): a
+# recommendation has no ground-truth claim to refute. A decide run also requires ≥3
+# model families to answer (the family quorum) before it will synthesize.
+# [decide]
+# audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw recommendations
+# redteam = []                            # off by default; add voices to pressure-test
 
 # ── Optional: token voices (opt-in) ──────────────────────────────────────────
 # The default council is subscription-CLI only and needs no keys. If you'd rather
@@ -65,6 +84,7 @@ chairman = "claude"
 # endpoint = "https://api.deepseek.com/v1/chat/completions"
 # model    = "deepseek-chat"
 # key_env  = "DEEPSEEK_API_KEY"     # export DEEPSEEK_API_KEY=... in your shell
+# family   = "deepseek"
 # timeout  = 120
 #
 # [providers.mistral]
@@ -72,9 +92,11 @@ chairman = "claude"
 # endpoint = "https://api.mistral.ai/v1/chat/completions"
 # model    = "mistral-large-latest"
 # key_env  = "MISTRAL_API_KEY"
+# family   = "mistral"
 #
 # [providers.qwen]                  # DashScope's OpenAI-compatible mode
 # type     = "http"
 # endpoint = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
 # model    = "qwen-max"
 # key_env  = "DASHSCOPE_API_KEY"
+# family   = "alibaba"

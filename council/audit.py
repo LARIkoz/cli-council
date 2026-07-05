@@ -145,11 +145,18 @@ def _mechanical_checks(synthesis: str, subject: str) -> list[dict]:
 def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
               audit_voices: list[str], redteam_voices: list[str],
               providers: dict[str, Provider], timeout: float | None = None,
+              audit_prompt: str = AUDIT_PROMPT, redteam_prompt: str = REDTEAM_PROMPT,
               log=lambda *_: None) -> AuditResult:
     """Run the verification layer: an audit panel and a redteam panel (each = all
     the voices you name, independent and parallel — the two panels also run
     concurrently with each other), plus instant mechanical checks. Empty voice
-    list = that pass is skipped."""
+    list = that pass is skipped.
+
+    `audit_prompt` / `redteam_prompt` are the panel prompt TEMPLATES; both take
+    {synthesis}, {raw_voices}, {subject}. They default to the code-review prompts,
+    so review is unchanged; decide mode passes its decision-framed variants. The
+    verdict vocabulary (CLEAN/ISSUES/INVALID · HOLDS/WEAK/REFUTED) and the gate are
+    the same across modes — one engine, only the wording differs."""
     result = AuditResult()
 
     result.mechanical = _mechanical_checks(synthesis, subject)
@@ -157,8 +164,8 @@ def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
     log(f"mechanical · {len(result.mechanical)} checks, {len(mech_fails)} issues")
 
     raw_block = "\n\n".join(f"### {v}\n{text}" for v, text in raw_voices.items())
-    audit_prompt = AUDIT_PROMPT.format(synthesis=synthesis, raw_voices=raw_block, subject=subject)
-    redteam_prompt = REDTEAM_PROMPT.format(synthesis=synthesis, subject=subject)
+    audit_prompt = audit_prompt.format(synthesis=synthesis, raw_voices=raw_block, subject=subject)
+    redteam_prompt = redteam_prompt.format(synthesis=synthesis, raw_voices=raw_block, subject=subject)
 
     parse_audit = lambda t: _parse_first_word(t, AUDIT_ORDER)      # noqa: E731
     parse_redteam = lambda t: _parse_first_word(t, REDTEAM_ORDER)  # noqa: E731

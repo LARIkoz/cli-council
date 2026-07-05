@@ -176,6 +176,39 @@ included, so a lone dissent stays visible: `SYNTHESIS.md`, `v-<voice>.md`
 `REDTEAM_VERDICT.md`, `MECHANICAL.md`, `RANKINGS.md`, machine-readable
 `pipeline-status.json`, and a `PIPELINE_DEGRADED.md` marker when not clean.
 
+## Decide mode
+
+The same council + verification, pointed at a **decision** instead of a code
+change. Voices recommend, anonymously peer-rank each other's recommendations, and
+a chairman synthesises one recommendation with the trade-offs and next actions
+grouped by tier (`BLOCKER` / `IMPORTANT` / `CHECK` / `ACCEPT` / `NOISE`) — then an
+**audit panel** checks the synthesis is faithful to the raw voices and a rule gate
+decides whether it's clean.
+
+```bash
+council decide "Postgres or MySQL for a write-heavy analytics workload?"
+council decide --out ./out "should we self-host the model or use an API?"
+council decide --voices opus,codex,agy,qwen "…"   # add an opt-in token house
+council decide --no-verify "…"                    # bare recommendation, no audit
+```
+
+Two things differ from review, both because a decision has no ground truth:
+
+- **Audit, not redteam, is the guard.** A redteam _refutes a claim_ — right for a
+  bug (true or false), but a recommendation has nothing to refute. So redteam is
+  **off by default**; the load-bearing check is the **audit** — that the synthesis
+  didn't invent convergence, misattribute a voice, or inflate an action tier. The
+  audit verdict (`CLEAN` / `ISSUES` / `INVALID`) and the same worst-wins gate carry
+  over unchanged. (Turn redteam on per run with `--redteam …` to pressure-test a
+  recommendation.)
+- **Family quorum.** A decision must draw on **≥3 model families** before it will
+  synthesise — two voices of one house (e.g. `opus` + `sonnet` = Anthropic) count
+  once, so no single vendor's models decide alone. Below quorum, the run aborts
+  loudly _before_ synthesis rather than presenting a monoculture recommendation.
+
+`--out` writes the same artifact set (`SYNTHESIS.md`, `AUDIT_VERDICT.md`,
+`RANKINGS.md`, per-voice `v-`/`a-`/`r-` files, `pipeline-status.json`).
+
 ## Configure
 
 Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
@@ -197,6 +230,19 @@ Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
   audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw reviews
   redteam = ["codex", "grok"]             # panel: adversarial attack on findings
   ```
+
+- **`[decide]`** — the same, for `council decide`. Audit is the mandatory guard;
+  redteam is off by default (a recommendation has no claim to refute):
+
+  ```toml
+  [decide]
+  audit   = ["claude", "codex", "grok"]   # panel: synthesis vs raw recommendations
+  redteam = []                            # off by default; add voices to pressure-test
+  ```
+
+- **`family`** — a voice's vendor lineage (`family = "anthropic"`), used only by
+  the `council decide` family quorum so two voices of one house count once. The
+  built-ins carry theirs; set it on any voice you define. Optional for ask/review.
 
 ### Extra CLI voices — two models of one CLI (optional)
 

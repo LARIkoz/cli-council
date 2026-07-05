@@ -27,6 +27,11 @@ class Config:
     # synthesis independently; verdicts aggregate worst-wins (see audit.py).
     review_audit: list[str] = dataclasses.field(default_factory=list)
     review_redteam: list[str] = dataclasses.field(default_factory=list)
+    # [decide] — the same, for `council decide`. Audit is the mandatory guard for a
+    # decision; redteam is off by default (empty) — a recommendation has no
+    # ground-truth claim to refute (see decide.py / pipeline.run_decide_pipeline).
+    decide_audit: list[str] = dataclasses.field(default_factory=list)
+    decide_redteam: list[str] = dataclasses.field(default_factory=list)
 
 
 def _http_provider(name: str, over: dict) -> Provider:
@@ -50,6 +55,7 @@ def _http_provider(name: str, over: dict) -> Provider:
         max_output_tokens=int(over["max_tokens"]) if "max_tokens" in over else DEFAULT_MAX_OUTPUT_TOKENS,
         timeout=float(over["timeout"]) if "timeout" in over else 0.0,
         experimental=bool(over.get("experimental", False)),
+        family=str(over.get("family", "")),
         install_hint=over.get("install_hint")
         or f"token voice — get an API key for {name}, then: export {key_env}=<key>",
         login_hint=over.get("login_hint") or f"export {key_env}=<your {name} API key>",
@@ -90,6 +96,7 @@ def _cli_provider(name: str, over: dict) -> Provider:
         uses_prompt_file=bool(over.get("uses_prompt_file", False)),
         timeout=float(over["timeout"]) if "timeout" in over else 0.0,
         experimental=bool(over.get("experimental", False)),
+        family=str(over.get("family", "")),
         install_hint=over.get("install_hint", ""),
         login_hint=over.get("login_hint", ""),
     )
@@ -120,6 +127,7 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             bin=over.get("bin", base.bin),
             argv=_argv_list(name, over) if "argv" in over else base.argv,
             timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
+            family=str(over["family"]) if "family" in over else base.family,
         )
     return providers
 
@@ -166,6 +174,10 @@ def load(path: str | None = None) -> Config:
     review_audit = list(review.get("audit") or [])
     review_redteam = list(review.get("redteam") or [])
 
+    dec = data.get("decide") or {}
+    decide_audit = list(dec.get("audit") or [])
+    decide_redteam = list(dec.get("redteam") or [])
+
     unknown = [v for v in voices if v not in providers]
     if unknown:
         raise ValueError(f"council.toml enrols unknown voices {unknown}; known: {sorted(providers)}")
@@ -175,7 +187,12 @@ def load(path: str | None = None) -> Config:
     if bad_panel:
         raise ValueError(f"council.toml [review] names unknown voices {bad_panel}; "
                          f"known: {sorted(providers)}")
+    bad_decide = [v for v in decide_audit + decide_redteam if v not in providers]
+    if bad_decide:
+        raise ValueError(f"council.toml [decide] names unknown voices {bad_decide}; "
+                         f"known: {sorted(providers)}")
 
     return Config(voices=voices, chairman=chairman, providers=providers,
                   timeout=timeout, source=str(cfg_file),
-                  review_audit=review_audit, review_redteam=review_redteam)
+                  review_audit=review_audit, review_redteam=review_redteam,
+                  decide_audit=decide_audit, decide_redteam=decide_redteam)

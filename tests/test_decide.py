@@ -1,0 +1,273 @@
+"""Decide mode: mode wiring, prompt building, the family quorum (NFR5), the full
+decide council + pipeline on a faked council, the decision-audit, and config —
+all offline (fakes only, no CLIs / network / git). Covers AC1/2/3/5/7/9."""
+import re
+import sys
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+from unittest import mock
+
+REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+
+from council import audit, config, decide, pipeline, review, stages  # noqa: E402
+from council.providers import Provider, family_of  # noqa: E402
+
+
+def _v(name, family=""):
+    return Provider(name=name, transport="cli", bin="x", argv=["x"], family=family)
+
+
+class TestModeWiring(unittest.TestCase):
+    def test_decide_mode_is_distinct(self):
+        self.assertEqual(decide.DECIDE.name, "decide")
+        self.assertIn("decision council", decide.DECIDE.rank_prompt)
+        self.assertIn("chair of a decision council", decide.DECIDE.chairman_prompt)
+        # NOT the ask or review templates
+        self.assertNotEqual(decide.DECIDE.rank_prompt, stages.ASK.rank_prompt)
+        self.assertNotEqual(decide.DECIDE.chairman_prompt, review.REVIEW.chairman_prompt)
+
+    def test_chairman_prompt_carries_action_tiers(self):
+        # FR4 — the synthesis must group into the owner's tiers.
+        for tier in ("## BLOCKER", "## IMPORTANT", "## CHECK", "## ACCEPT", "## NOISE"):
+            self.assertIn(tier, decide.DECIDE.chairman_prompt)
+
+
+class TestBuildDecidePrompt(unittest.TestCase):
+    def test_wraps_question_in_contract(self):
+        subject, target = decide.build_decide_prompt("Postgres or MySQL for this?")
+        self.assertIn("Postgres or MySQL for this?", subject)
+        self.assertIn("decision council", subject)     # the contract framing
+        self.assertIn("## Decision", subject)
+        self.assertTrue(target.startswith("decide:"))
+
+    def test_long_question_label_truncated(self):
+        q = "should we " + "x" * 200
+        _, target = decide.build_decide_prompt(q)
+        self.assertTrue(target.endswith("…"))
+        self.assertLessEqual(len(target), len("decide:") + 61)
+
+    def test_empty_question_raises(self):
+        with self.assertRaises(ValueError):
+            decide.build_decide_prompt("   \n  ")
+
+
+class TestFamilyQuorum(unittest.TestCase):
+    """NFR5 — a decision needs ≥3 model families among the voices that answered.
+    Two voices of one house count once (family_of)."""
+
+    def setUp(self):
+        self.providers = {
+            "opus": _v("opus", "anthropic"),
+            "sonnet": _v("sonnet", "anthropic"),
+            "codex": _v("codex", "openai"),
+            "grok": _v("grok", "xai"),
+        }
+
+    def test_three_families_ok(self):
+        answered = {"opus": "a", "codex": "b", "grok": "c"}      # 3 families
+        self.assertIsNone(decide.family_quorum_error(answered, self.providers))
+
+    def test_two_families_aborts_even_with_three_voices(self):
+        # opus + sonnet + codex = anthropic + openai = only 2 families → abort.
+        answered = {"opus": "a", "sonnet": "b", "codex": "c"}
+        err = decide.family_quorum_error(answered, self.providers)
+        self.assertIsNotNone(err)
+        self.assertIn("family quorum not met", err)
+        self.assertIn("2 model families", err)
+
+    def test_unlabeled_voice_is_its_own_family(self):
+        provs = {"a": _v("a"), "b": _v("b"), "c": _v("c")}      # no family → name
+        self.assertEqual(family_of(provs["a"]), "a")
+        self.assertIsNone(decide.family_quorum_error({"a": "1", "b": "2", "c": "3"}, provs))
+
+
+class TestRunDecide(unittest.TestCase):
+    """Full decide council over a faked, family-diverse roster."""
+
+    def setUp(self):
+        def fake_invoke(p, prompt, timeout):
+            if "Recommendations to rank" in prompt:                  # stage 2
+                labels = re.findall(r"### (Response [A-Z])", prompt)
+                bullets = "\n".join(f"- {l}: grounded" for l in labels)
+                ranking = "\n".join(f"{i}. {l}" for i, l in enumerate(labels, 1))
+                return True, f"{bullets}\nFINAL RANKING:\n{ranking}"
+            if "chair of a decision council" in prompt:              # stage 3
+                return True, ("Adopt Postgres.\n\n## IMPORTANT\n"
+                              "plan the migration — because the write path scales.\n")
+            return True, f"Recommend Postgres\nreasoning from {p.name}"  # stage 1
+
+        self._patch = mock.patch.object(stages, "invoke", fake_invoke)
+        self._patch.start()
+        self.addCleanup(self._patch.stop)
+        self.providers = {"opus": _v("opus", "anthropic"),
+                          "codex": _v("codex", "openai"),
+                          "agy": _v("agy", "google")}
+
+    def test_decide_run_end_to_end(self):
+        subject, target = decide.build_decide_prompt("Postgres or MySQL?")
+        res = decide.run_decide(subject, target, voices=["opus", "codex", "agy"],
+                                chairman="opus", providers=self.providers)
+        self.assertEqual(res.verdict, "DECISION")
+        self.assertIn("Adopt Postgres", res.review)
+        self.assertIn("## IMPORTANT", res.review)                    # action tier present
+        self.assertEqual(sorted(res.reviewers), ["agy", "codex", "opus"])
+        self.assertIsNotNone(res.council.board)
+
+    def test_decide_aborts_below_family_quorum(self):
+        # only 2 families enrolled → abort BEFORE synthesis (AC7).
+        two_fam = {"opus": _v("opus", "anthropic"), "sonnet": _v("sonnet", "anthropic"),
+                   "codex": _v("codex", "openai")}
+        subject, target = decide.build_decide_prompt("go or no-go?")
+        with self.assertRaises(RuntimeError) as e:
+            decide.run_decide(subject, target, voices=["opus", "sonnet", "codex"],
+                              chairman="opus", providers=two_fam)
+        self.assertIn("family quorum not met", str(e.exception))
+
+
+class TestDecidePipeline(unittest.TestCase):
+    """run_decide_pipeline: decide council → DECISION audit panel → gate."""
+
+    def setUp(self):
+        self.providers = {"opus": _v("opus", "anthropic"), "codex": _v("codex", "openai"),
+                          "agy": _v("agy", "google")}
+        self.audit_seen = []
+
+        def fake_stage_invoke(p, prompt, timeout):
+            if "Recommendations to rank" in prompt:
+                labels = re.findall(r"### (Response [A-Z])", prompt)
+                return True, "FINAL RANKING:\n" + "\n".join(
+                    f"{i}. {l}" for i, l in enumerate(labels, 1))
+            if "chair of a decision council" in prompt:
+                return True, "Adopt Postgres.\n\n## IMPORTANT\nmigrate — scales better."
+            return True, f"Recommend Postgres\nby {p.name}"
+
+        self.audit_verdict = "CLEAN"
+
+        def fake_panel_invoke(p, prompt, timeout):
+            self.audit_seen.append(prompt)
+            return True, f"{self.audit_verdict}\nchecked"
+
+        self._p1 = mock.patch("council.stages.invoke", fake_stage_invoke)
+        self._p2 = mock.patch("council.panel.invoke", fake_panel_invoke)
+        self._p1.start(); self._p2.start()
+        self.addCleanup(self._p1.stop)
+        self.addCleanup(self._p2.stop)
+
+    def _run(self, **kw):
+        subject, target = decide.build_decide_prompt("Postgres or MySQL?")
+        return pipeline.run_decide_pipeline(
+            subject, target, ["opus", "codex", "agy"], "opus", self.providers,
+            log=lambda *_: None, **kw)
+
+    def test_clean_decide_with_audit(self):
+        # AC1/AC5 — recommendation + tiers, audit CLEAN, verification present.
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.status, "clean")
+        self.assertIn("Adopt Postgres", res.review.review)
+        self.assertEqual(res.verification.audit_verdict, "CLEAN")
+        self.assertEqual(res.verification.redteam_verdict, "SKIPPED")   # redteam off
+
+    def test_decision_audit_prompt_was_used_not_review(self):
+        # FR2 wiring — the DECISION audit prompt (not the code-review AUDIT_PROMPT)
+        # reached the panel.
+        self._run(audit_voices=["codex"])
+        joined = "\n".join(self.audit_seen)
+        self.assertIn("decision council", joined)          # decision-audit wording
+        self.assertIn("Raw advisor answers", joined)
+        self.assertNotIn("change under review", joined)     # NOT the review audit prompt
+
+    def test_planted_convergence_flagged_issues(self):
+        # AC2 (plumbing) — an auditor returning ISSUES degrades the decide pipeline
+        # and surfaces AUDIT_VERDICT=ISSUES (never a clean pass).
+        self.audit_verdict = "ISSUES"
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.verification.audit_verdict, "ISSUES")
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.verification.degraded_kind, "finding")
+
+    def test_unverified_without_panels(self):
+        # AC3 — no verification configured → status "unverified", never "clean".
+        res = self._run()
+        self.assertEqual(res.status, "unverified")
+        self.assertIsNone(res.verification)
+
+    def test_pipeline_enforces_family_quorum(self):
+        # AC7 at the pipeline layer — 2-family roster aborts before synthesis.
+        two_fam = {"opus": _v("opus", "anthropic"), "sonnet": _v("sonnet", "anthropic")}
+        subject, target = decide.build_decide_prompt("go?")
+        with self.assertRaises(RuntimeError) as e:
+            pipeline.run_decide_pipeline(subject, target, ["opus", "sonnet"], "opus",
+                                         two_fam, audit_voices=["opus"], log=lambda *_: None)
+        self.assertIn("family quorum", str(e.exception))
+
+
+class TestDecideConfig(unittest.TestCase):
+    """[decide] panels + `family` parsing + the roster shape AC9 depends on."""
+
+    def _toml(self, body: str) -> str:
+        fd = tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False)
+        fd.write(textwrap.dedent(body))
+        fd.close()
+        self.addCleanup(lambda: Path(fd.name).unlink(missing_ok=True))
+        return fd.name
+
+    def test_decide_section_and_family_parsed(self):
+        cfg = config.load(self._toml("""
+            [providers.opus]
+            type = "cli"
+            bin  = "claude"
+            argv = ["claude", "-p", "--model", "opus"]
+            family = "anthropic"
+
+            [providers.qwen]
+            type     = "http"
+            endpoint = "https://example/v1/chat/completions"
+            model    = "qwen-max"
+            key_env  = "DASHSCOPE_API_KEY"
+            family   = "alibaba"
+
+            [council]
+            voices   = ["opus", "codex", "grok"]
+            chairman = "opus"
+
+            [decide]
+            audit   = ["codex", "grok"]
+            redteam = []
+        """))
+        self.assertEqual(cfg.decide_audit, ["codex", "grok"])
+        self.assertEqual(cfg.decide_redteam, [])              # redteam off by default
+        self.assertEqual(cfg.providers["opus"].family, "anthropic")
+        self.assertEqual(cfg.providers["qwen"].family, "alibaba")
+        # AC9 — the http house is DEFINED but NOT enrolled in the default council.
+        self.assertNotIn("qwen", cfg.voices)
+        self.assertIn("qwen", cfg.providers)
+
+    def test_unkeyed_http_voice_is_not_installed(self):
+        # AC9 — a selected-but-unkeyed http house reports not-installed (→ skipped
+        # gracefully at invoke time, never a crash).
+        from council import providers as PV
+        qwen = PV.Provider(name="qwen", transport="http", endpoint="https://x/v1",
+                           model="qwen-max", key_env="CLI_COUNCIL_NO_SUCH_KEY_XYZ")
+        self.assertNotIn("CLI_COUNCIL_NO_SUCH_KEY_XYZ", __import__("os").environ)
+        self.assertFalse(PV.is_installed(qwen))
+        # and invoke fails loudly (dropped from the run), rather than raising.
+        ok, msg = PV.invoke(qwen, "hi", timeout=1)
+        self.assertFalse(ok)
+        self.assertIn("qwen", msg)
+
+    def test_bad_decide_voice_rejected_loudly(self):
+        with self.assertRaises(ValueError) as e:
+            config.load(self._toml("""
+                [council]
+                voices = ["claude"]
+                [decide]
+                audit = ["ghostvoice"]
+            """))
+        self.assertIn("ghostvoice", str(e.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

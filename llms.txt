@@ -18,7 +18,10 @@ opinions → anonymized peer-rank → chairman synthesis) for answers and review
 and a PANEL (every voice independently, worst-wins rule aggregation, no
 chairman) for gates. `council "question"` asks; `council review [ref]` reviews a
 code change, then optional audit/redteam panels verify the synthesis and a pure
-rule gate reports clean / degraded / unverified (fail-closed).
+rule gate reports clean / degraded / unverified (fail-closed). `council decide
+"question"` makes a verified decision: the same council + audit panel, but
+redteam is off by default (a recommendation has no ground-truth claim to refute)
+and a family quorum requires ≥3 model families before it synthesises.
 
 ## Docs
 
@@ -30,6 +33,7 @@ rule gate reports clean / degraded / unverified (fail-closed).
 
 - [council/stages.py](council/stages.py): the three council stages — first opinions, anonymized peer ranking, chairman synthesis, with loud-fail on any voice; a `Mode` chooses the ranking/chairman wording (ask vs review), the engine is shared.
 - [council/review.py](council/review.py): review mode — build a review prompt from a git diff / files / prompt-file, run the council with review wording, synthesise one review with a verdict (SHIP/…/REWORK) and BLOCKER/IMPORTANT/CHECK/ACCEPT/NOISE severities.
+- [council/decide.py](council/decide.py): decide mode — wrap a question in a decision contract, run the council with decision wording (recommendation + trade-offs + action tiers), gate on a ≥3 model-family quorum before synthesis, plus the DECISION audit prompt (invented convergence / misattribution / tier inflation) reused by the pipeline.
 - [council/panel.py](council/panel.py): the PANEL primitive — every voice gets the same prompt independently and in parallel; verdicts aggregate worst-wins (a rule can't be talked into softening; a lone credible catch can't be outvoted).
 - [council/audit.py](council/audit.py): verification layer — audit panel (synthesis vs raw reviews), redteam panel (adversarial attack on findings), mechanical greps, and the pure-rule gate (clean ⇔ audit CLEAN ∧ redteam HOLDS/skipped; fail-closed).
 - [council/pipeline.py](council/pipeline.py): the one-call review pipeline (council → panels → gate) — the library entry point; returns status clean / degraded / unverified with reasons.

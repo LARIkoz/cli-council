@@ -91,19 +91,25 @@ class Provider:
     experimental: bool = False
     env: dict = field(default_factory=dict)
     timeout: float = 0.0  # per-voice ceiling in seconds; 0 = use DEFAULT_TIMEOUT
+    # Model FAMILY (vendor lineage), for the decide-mode family quorum: two voices
+    # of one house (opus + sonnet = "anthropic") count as ONE family, so a decision
+    # can't reach quorum on a single vendor's models. Empty → the voice is its own
+    # family (family_of falls back to the name). Set on the built-ins below; a
+    # council.toml voice declares its own `family = "…"`.
+    family: str = ""
 
 
 # The official subscription CLIs. Claude is the native default (Claude Code is
 # built for headless agentic use on a Claude subscription); the rest are opt-in.
 PROVIDERS: dict[str, Provider] = {
     "claude": Provider(
-        name="claude", bin="claude", native=True,
+        name="claude", bin="claude", native=True, family="anthropic",
         argv=["claude", "-p"], extract=_plain,
         install_hint="npm i -g @anthropic-ai/claude-code   (https://docs.claude.com/claude-code)",
         login_hint="run `claude` once and use /login (or `claude setup-token`)",
     ),
     "codex": Provider(
-        name="codex", bin="codex",
+        name="codex", bin="codex", family="openai",
         # --skip-git-repo-check: `codex exec` otherwise refuses to run outside a
         # "trusted" (git) directory. A council question is read-only Q&A on stdin,
         # so the guard just breaks "run council from anywhere" — skip it.
@@ -116,7 +122,7 @@ PROVIDERS: dict[str, Provider] = {
         timeout=600.0,
     ),
     "grok": Provider(
-        name="grok", bin="grok", uses_prompt_file=True,
+        name="grok", bin="grok", uses_prompt_file=True, family="xai",
         # grok is AGENTIC: on a review prompt it tries file tools (read_file etc).
         # In a council there's no repo to read, the tool call stalls, and grok's
         # internal tool timeout fires SIGALRM → the process dies with rc=142
@@ -141,7 +147,7 @@ PROVIDERS: dict[str, Provider] = {
     # — see Google's gemini-cli docs). Set any needed env in your shell. The
     # smoke test is the arbiter: if it PASSes on your machine, enrol it.
     "gemini": Provider(
-        name="gemini", bin="gemini", experimental=True,
+        name="gemini", bin="gemini", experimental=True, family="google",
         argv=["gemini", "-p", "{prompt}"], extract=_plain,
         install_hint="npm i -g @google/gemini-cli",
         login_hint="run `gemini` once and complete login; headless may need vendor env (see README)",
@@ -150,12 +156,19 @@ PROVIDERS: dict[str, Provider] = {
     # classic gemini CLI is retired, this is the live Google voice. `-p`/--print
     # runs a single prompt non-interactively. Experimental until it smokes.
     "agy": Provider(
-        name="agy", bin="agy", experimental=True,
+        name="agy", bin="agy", experimental=True, family="google",
         argv=["agy", "-p", "{prompt}"], extract=_plain,
         install_hint="Google Antigravity CLI (install per Google's instructions)",
         login_hint="run `agy` once and sign in to your Google/Antigravity account",
     ),
 }
+
+
+def family_of(p: Provider) -> str:
+    """This voice's model family for the decide-mode family quorum. Falls back to
+    the voice name when unlabeled, so an unlabeled voice conservatively counts as
+    its own family (never accidentally merged with another)."""
+    return p.family or p.name
 
 
 def is_installed(p: Provider) -> bool:

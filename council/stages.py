@@ -109,10 +109,16 @@ def _anonymize(opinions: dict[str, str]) -> tuple[str, dict[str, str]]:
 
 def run_council(question: str, voices: list[str], chairman: str,
                 providers: dict[str, Provider], timeout: float | None = None,
-                mode: Mode = ASK, log=lambda *_: None) -> CouncilResult:
+                mode: Mode = ASK, quorum=None, log=lambda *_: None) -> CouncilResult:
     # `timeout` (from --timeout / council.toml) is an explicit global override;
     # when None, each voice uses its own ceiling (resolve_timeout). Slow voices
     # (codex/grok) thus get their headroom without making fast natives wait.
+    #
+    # `quorum` is an optional pre-synthesis gate: called with the voices that
+    # actually ANSWERED stage 1; returning a message aborts the run loudly BEFORE
+    # any ranking or synthesis (decide mode uses it for the family quorum — a
+    # decision must not be synthesized from too few model families). None = no gate,
+    # so ask/review are unaffected.
     res = CouncilResult(question=question, chairman=chairman)
 
     # Stage 1 — first opinions (parallel: voices are I/O-bound, not CPU-bound).
@@ -132,6 +138,13 @@ def run_council(question: str, voices: list[str], chairman: str,
                 log(f"    {v} ✗ {out}")
     if not res.opinions:
         raise RuntimeError("all voices failed at stage 1: " + "; ".join(res.opinion_errors.values()))
+
+    # Pre-synthesis gate (decide's family quorum): abort before spending the
+    # ranking + chairman calls if the answering voices don't clear the bar.
+    if quorum is not None:
+        gate_err = quorum(res.opinions)
+        if gate_err:
+            raise RuntimeError(gate_err)
 
     # A one-voice council needs no ranking; the single answer stands.
     if len(res.opinions) == 1:

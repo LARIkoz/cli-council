@@ -1,7 +1,8 @@
-"""`council "question"` — ask the council · `council review [ref]` — review a diff.
+"""`council "question"` — ask the council · `council review [ref]` — review a diff
+· `council decide "question"` — a verified decision (recommendation + audit + gate).
 
-`review` (and an explicit `ask`) are subcommands; anything else is treated as a
-question, so `council "…"` keeps working exactly as before.
+`review`, `decide` (and an explicit `ask`) are subcommands; anything else is
+treated as a question, so `council "…"` keeps working exactly as before.
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import json
 import re
 import sys
 
-from . import __version__, config, pipeline, review, stages
+from . import __version__, config, decide, pipeline, review, stages
 
 
 def _safe(name: str) -> str:
@@ -24,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "review":
         return _review_main(argv[1:])
+    if argv and argv[0] == "decide":
+        return _decide_main(argv[1:])
     if argv and argv[0] == "ask":
         argv = argv[1:]
     return _ask_main(argv)
@@ -202,6 +205,117 @@ def _review_main(argv: list[str]) -> int:
     return 0
 
 
+def _decide_main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="council decide",
+        description="Make a verified decision with the council: voices recommend, "
+                    "peer-rank, a chairman synthesises one recommendation with "
+                    "action tiers, then an audit panel gates it (redteam opt-in).")
+    ap.add_argument("question", nargs="*", help="the decision/question (or pipe it on stdin)")
+    ap.add_argument("--voices", help="comma-separated subset of enrolled voices to use")
+    ap.add_argument("--chairman", help="which voice synthesises the final recommendation")
+    ap.add_argument("--config", help="path to council.toml")
+    ap.add_argument("--timeout", type=float, help="per-call timeout seconds (overrides per-voice defaults)")
+    ap.add_argument("--audit", metavar="V1,V2,...",
+                    help="audit PANEL: comma-separated voices; each independently compares the "
+                         "synthesis against the raw recommendations (worst verdict wins). "
+                         "Defaults to [decide].audit in council.toml")
+    ap.add_argument("--redteam", metavar="V1,V2,...",
+                    help="redteam PANEL (OFF by default for decide): comma-separated voices; "
+                         "each independently attacks the recommendation. "
+                         "Defaults to [decide].redteam in council.toml")
+    ap.add_argument("--no-verify", action="store_true",
+                    help="skip audit/redteam even if council.toml configures panels")
+    ap.add_argument("--out", help="write SYNTHESIS.md + AUDIT_VERDICT.md + RANKINGS.md + "
+                                  "v-/a-/r-<voice>.md + pipeline-status.json here")
+    ap.add_argument("--json", action="store_true", help="print the full result as JSON")
+    ap.add_argument("--version", action="version", version=f"cli-council {__version__}")
+    args = ap.parse_args(argv)
+
+    question = " ".join(args.question).strip() or (sys.stdin.read().strip() if not sys.stdin.isatty() else "")
+    try:
+        subject, target = decide.build_decide_prompt(question)
+    except ValueError as e:
+        ap.error(str(e))
+
+    cfg = config.load(args.config)
+    voices, chairman, timeout = _shared_selection(args, cfg)
+
+    tmode = "per-voice" if timeout is None else f"{timeout:.0f}s (forced)"
+    print(f"cli-council {__version__} · decide · voices: {', '.join(voices)} · "
+          f"chairman: {chairman} · timeout: {tmode} · config: {cfg.source}", file=sys.stderr)
+
+    # Verification panels: CLI overrides toml; --no-verify kills both. Redteam is
+    # off unless [decide].redteam (or --redteam) names voices.
+    split = lambda s: [v.strip() for v in s.split(",") if v.strip()]  # noqa: E731
+    audit_voices = split(args.audit) if args.audit else list(cfg.decide_audit)
+    redteam_voices = split(args.redteam) if args.redteam else list(cfg.decide_redteam)
+    if args.no_verify:
+        audit_voices, redteam_voices = [], []
+    bad = [v for v in audit_voices + redteam_voices if v not in cfg.providers]
+    if bad:
+        print(f"unknown audit/redteam voices {bad}; known: {sorted(cfg.providers)}", file=sys.stderr)
+        return 2
+
+    try:
+        res = pipeline.run_decide_pipeline(
+            subject, target, voices, chairman, cfg.providers,
+            audit_voices=audit_voices, redteam_voices=redteam_voices,
+            timeout=timeout, log=lambda m: print(m, file=sys.stderr))
+    except RuntimeError as e:
+        print(f"decide failed: {e}", file=sys.stderr)
+        return 1
+    rec, ver = res.review, res.verification
+
+    if args.out:
+        _write_artifacts(args.out, subject, res, prompt_filename="decide_prompt.md")
+
+    if args.json:
+        board = rec.council.board
+        out_data = {
+            "target": rec.target,
+            "status": res.status,
+            "degraded_kind": res.degraded_kind,
+            "degraded_reasons": res.degraded_reasons,
+            "voices": rec.reviewers,
+            "opinion_errors": rec.council.opinion_errors,
+            "leaderboard": board.rows if board else [],
+            "recommendation": rec.review,
+        }
+        if ver:
+            out_data["audit"] = {"verdict": ver.audit_verdict,
+                                 "per_voice": ver.audit_panel.verdicts if ver.audit_panel else {},
+                                 "errors": ver.audit_panel.errors if ver.audit_panel else {}}
+            out_data["redteam"] = {"verdict": ver.redteam_verdict,
+                                   "per_voice": ver.redteam_panel.verdicts if ver.redteam_panel else {},
+                                   "errors": ver.redteam_panel.errors if ver.redteam_panel else {}}
+            out_data["mechanical"] = ver.mechanical
+        print(json.dumps(out_data, indent=2, ensure_ascii=False))
+        return 0
+
+    _print_leaderboard(rec.council)
+    status_txt = res.status.upper() + (f" ({res.degraded_kind})" if res.degraded_kind else "")
+    line = f"decision · {status_txt}"
+    if ver:
+        line += f" | audit: {ver.audit_verdict}"
+        if ver.redteam_verdict not in ("SKIPPED",):
+            line += f" | redteam: {ver.redteam_verdict}"
+    else:
+        line += " | audit: unverified"
+    print(f"\n── Decision · {rec.target} · {line} ──────────────────\n")
+    print(rec.review)
+    if ver and ver.audit_verdict not in ("CLEAN", "SKIPPED") and ver.audit_panel:
+        worst = [v for v, verd in ver.audit_panel.verdicts.items()
+                 if verd == ver.audit_verdict]
+        for v in worst:
+            print(f"\n── Audit ({v}: {ver.audit_verdict}) ──\n\n{ver.audit_panel.texts[v]}")
+    if ver and ver.redteam_verdict == "REFUTED" and ver.redteam_panel:
+        worst = [v for v, verd in ver.redteam_panel.verdicts.items() if verd == "REFUTED"]
+        for v in worst:
+            print(f"\n── Redteam ({v}: REFUTED) ──\n\n{ver.redteam_panel.texts[v]}")
+    return 0
+
+
 def _print_leaderboard(res) -> None:
     if res.board and res.board.rows:
         print("\n  peer leaderboard:", file=sys.stderr)
@@ -224,18 +338,19 @@ def _panel_verdict_md(title: str, verdict: str, panel) -> str:
     return "\n".join(lines)
 
 
-def _write_artifacts(out: str, subject: str, pres) -> None:
+def _write_artifacts(out: str, subject: str, pres, prompt_filename: str = "review_prompt.md") -> None:
     """Persist the pipeline the way the orchestration contract expects:
     SYNTHESIS.md · v-<voice>.md (reviews) · a-/r-<voice>.md (panelists) ·
     AUDIT_VERDICT.md / REDTEAM_VERDICT.md / MECHANICAL.md · RANKINGS.md ·
-    pipeline-status.json · PIPELINE_DEGRADED.md marker when not clean."""
+    pipeline-status.json · PIPELINE_DEGRADED.md marker when not clean.
+    `prompt_filename` names the saved prompt (review_prompt.md / decide_prompt.md)."""
     from pathlib import Path
     d = Path(out)
     d.mkdir(parents=True, exist_ok=True)
     rev, ver = pres.review, pres.verification
     council = rev.council
 
-    (d / "review_prompt.md").write_text(subject)
+    (d / prompt_filename).write_text(subject)
     (d / "SYNTHESIS.md").write_text(rev.review)
     for voice, text in council.opinions.items():
         (d / f"v-{_safe(voice)}.md").write_text(text)
