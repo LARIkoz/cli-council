@@ -52,6 +52,17 @@ class TestEnrollSmokeGate(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(self._written_voices(), ["claude", "gemini"])
 
+    def test_enroll_writes_gated_panels(self):
+        # enroll must produce a GATED config (not a bare council): chairman off its own
+        # audit, decide redteam OFF, review keeps a lean redteam.
+        import tomllib
+        doctor.enroll(["claude", "codex"], verify=False)  # chairman defaults to claude
+        cfg = tomllib.loads(self._tmp.read_text())
+        self.assertEqual(cfg["decide"]["audit"], ["codex"])     # non-chairman only
+        self.assertEqual(cfg["decide"]["redteam"], [])          # off for a decision
+        self.assertEqual(cfg["review"]["audit"], ["codex"])
+        self.assertEqual(cfg["review"]["redteam"], ["codex"])
+
 
 if __name__ == "__main__":
     unittest.main()

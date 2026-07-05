@@ -144,11 +144,24 @@ def _read_enrolled() -> list[str]:
 
 
 def _toml(voices: list[str], chairman: str) -> str:
-    vs = ", ".join(f'"{v}"' for v in voices)
+    q = lambda xs: ", ".join(f'"{v}"' for v in xs)  # noqa: E731
+    # Verification panels so an enrolled config is GATED out of the box (not just a bare
+    # council). audit = every non-chairman voice (max recall; the chairman stays off its
+    # own audit — no self-approval). review adds a lean redteam (≤2 voices); decide keeps
+    # redteam OFF (a recommendation has no ground-truth claim to refute — its guard is the
+    # audit). A degenerate 1-voice council has no non-chairman auditor → panels stay empty
+    # (the run reports `unverified`, honestly, rather than self-auditing).
+    others = [v for v in voices if v != chairman]
     return ("# written by `doctor enroll` — only smoke-PASSED voices should be here\n"
             "[council]\n"
-            f"voices = [{vs}]\n"
-            f'chairman = "{chairman}"\n')
+            f"voices = [{q(voices)}]\n"
+            f'chairman = "{chairman}"\n'
+            "\n[review]\n"
+            f"audit   = [{q(others)}]\n"
+            f"redteam = [{q(others[:2])}]\n"
+            "\n[decide]\n"
+            f"audit   = [{q(others)}]\n"
+            "redteam = []\n")
 
 
 def _emit_toml_value(v) -> str:

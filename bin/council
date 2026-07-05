@@ -3,5 +3,18 @@
 # No dependencies: just runs the stdlib-only package with the repo on sys.path.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
+# council needs Python 3.11+ (tomllib is stdlib only from 3.11). Use `python3` when it
+# is new enough; else fall back to the newest explicit python3.1x on PATH — macOS ships
+# 3.9 as the default `python3`, but a 3.11+ is usually installed alongside (brew /
+# python.org / pyenv). Fail loud if none is found.
+PY=python3
+if ! command -v "$PY" >/dev/null 2>&1 || \
+   ! "$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
+  PY=""
+  for c in python3.13 python3.12 python3.11; do
+    if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
+  done
+  [ -n "$PY" ] || { echo "cli-council needs Python 3.11+ (tomllib); none found (tried python3, python3.13/.12/.11)" >&2; exit 1; }
+fi
 # Put the repo on sys.path so `-m council` resolves from any cwd (bin/ on PATH).
-exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" python3 -m council "$@"
+exec env PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}" "$PY" -m council "$@"
