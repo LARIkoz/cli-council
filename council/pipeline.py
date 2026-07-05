@@ -41,7 +41,13 @@ def _council_infra(rev) -> list[str]:
       so the audit trivially passes it;
     - a council that collapsed to ONE voice: no peer ranking or cross-checked synthesis
       happened, and the audit would compare the lone answer to itself → a hollow CLEAN.
-    (decide can't reach the 1-voice case — the ≥3-family quorum aborts first.)"""
+    (decide can't reach the 1-voice case — the ≥3-family quorum aborts first.)
+
+    NOT here (deliberate): a total peer-ranking failure. Ranking is advisory (spec NFR4,
+    "signal-only, never gates"); the chairman has a supported "weigh on merits" fallback,
+    the synthesis is still built from the real multi-voice opinions and audited for
+    faithfulness, and rank_errors stay visible in RANKINGS.md — so gating it would
+    over-fire on a valid, audited run. (Refuted two dogfood-review BLOCKERs on this.)"""
     reasons = []
     if rev.council.synthesis_error:
         reasons.append(f"synthesis failed: {rev.council.synthesis_error} [infra]")

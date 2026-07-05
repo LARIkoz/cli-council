@@ -139,9 +139,12 @@ class TestDecidePipeline(unittest.TestCase):
         self.audit_dies = False           # flip on to kill the whole audit panel
         self.audit_dead_voices = set()    # kill only these audit panelists (partial death)
         self.audit_garbles = set()        # these return LIVE but unparseable output (ERROR)
+        self.rankers_fail = False         # flip on to make ALL peer rankings unparseable
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Recommendations to rank" in prompt:
+                if self.rankers_fail:
+                    return True, "I have thoughts but no FINAL RANKING block."   # unparseable
                 labels = re.findall(r"### (Response [A-Z])", prompt)
                 return True, "FINAL RANKING:\n" + "\n".join(
                     f"{i}. {l}" for i, l in enumerate(labels, 1))
@@ -291,6 +294,18 @@ class TestDecidePipeline(unittest.TestCase):
         self.assertEqual(res.status, "degraded")
         self.assertEqual(res.degraded_kind, "infra")
         self.assertTrue(any("run/parse" in r for r in res.degraded_reasons))
+
+    def test_ranking_failure_alone_stays_clean(self):
+        # DEFENDED boundary (NFR4): peer-ranking is advisory. When it fails to parse, the
+        # chairman synthesizes "on merits" (a supported fallback) and the audit still guards
+        # faithfulness. A rank failure is visible in RANKINGS.md but must NOT degrade a run
+        # whose synthesis is otherwise clean — else valid runs over-fire. (Two dogfood-review
+        # BLOCKERs claimed this should gate; refuted against NFR4 + the code.)
+        self.rankers_fail = True
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.review.council.orders, {})           # nothing parsed
+        self.assertTrue(res.review.council.rank_errors)           # but recorded (visible)
+        self.assertEqual(res.status, "clean")                     # advisory ≠ gate
 
 
 class TestDecideConfig(unittest.TestCase):
