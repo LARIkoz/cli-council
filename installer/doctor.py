@@ -106,12 +106,23 @@ def enroll(voices: list[str], verify: bool = True) -> int:
         print("note: 'claude' (native default) not in the list — that's allowed, "
               "but the out-of-box guarantee is Claude. Continuing with your choice.")
     chairman = "claude" if "claude" in voices else voices[0]
-    # Preserve any hand-written [providers.*] blocks (e.g. http/token voices) —
-    # enroll only owns the [council] section, it must not erase your voice defs.
-    CONFIG.write_text(_toml(voices, chairman) + _existing_provider_blocks())
+    others = [v for v in voices if v != chairman]
+    # Preserve any hand-written [providers.*] blocks (e.g. http/token voices) AND a
+    # user-set global [council].timeout — enroll owns voices/chairman/panels, but must
+    # not silently erase your voice defs or your timeout escape hatch.
+    prior_timeout = _existing_council_timeout()
+    CONFIG.write_text(_toml(voices, chairman, prior_timeout) + _existing_provider_blocks())
     print(f"wrote {CONFIG}")
     print(f"  voices   = {voices}")
     print(f"  chairman = {chairman}")
+    if prior_timeout is not None:
+        print(f"  timeout  = {prior_timeout} (preserved from your prior council.toml)")
+    if others:
+        print(f"  panels   = [review]/[decide] audit = {others} — regenerated from your "
+              "voices; edit council.toml to hand-tune.")
+    else:
+        print("  panels   = none — a single-voice council has no non-chairman auditor, "
+              "so runs report 'unverified' (add a voice to gate them).")
     print("run `council \"your question\"` to use it.")
     return 0
 
@@ -143,8 +154,11 @@ def _read_enrolled() -> list[str]:
         return []
 
 
-def _toml(voices: list[str], chairman: str) -> str:
+def _toml(voices: list[str], chairman: str, timeout=None) -> str:
     q = lambda xs: ", ".join(f'"{v}"' for v in xs)  # noqa: E731
+    # A user-set global [council].timeout is orthogonal to the voice set, so re-enroll
+    # carries it forward rather than silently dropping a documented escape hatch.
+    timeout_line = f"timeout = {_emit_toml_value(timeout)}\n" if timeout is not None else ""
     # Verification panels so an enrolled config is GATED out of the box (not just a bare
     # council). audit = every non-chairman voice (max recall; the chairman stays off its
     # own audit — no self-approval). review adds a lean redteam (≤2 voices); decide keeps
@@ -156,6 +170,7 @@ def _toml(voices: list[str], chairman: str) -> str:
             "[council]\n"
             f"voices = [{q(voices)}]\n"
             f'chairman = "{chairman}"\n'
+            f"{timeout_line}"
             "\n[review]\n"
             f"audit   = [{q(others)}]\n"
             f"redteam = [{q(others[:2])}]\n"
@@ -198,6 +213,18 @@ def _existing_provider_blocks() -> str:
     except Exception:  # noqa: BLE001 — unreadable file: nothing to preserve
         return ""
     return _emit_provider_blocks(data.get("providers") or {})
+
+
+def _existing_council_timeout():
+    """A user-set [council].timeout, so re-enroll carries it forward instead of
+    silently dropping it. None if unset/unreadable."""
+    if not CONFIG.is_file():
+        return None
+    try:
+        import tomllib
+        return tomllib.loads(CONFIG.read_text()).get("council", {}).get("timeout")
+    except Exception:  # noqa: BLE001 — unreadable file: nothing to preserve
+        return None
 
 
 def main(argv: list[str]) -> int:

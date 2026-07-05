@@ -97,7 +97,7 @@ Requires Python 3.11+ (stdlib only — nothing to `pip install`).
 
 ```bash
 git clone https://github.com/LARIkoz/cli-council && cd cli-council
-./install.sh          # runs the strict install contract (detect → choose → install → login → smoke)
+./install.sh          # detects your CLIs + prints the gated next steps (full contract is agent-driven — installer/CONTRACT.md)
 ```
 
 The installer is designed to be driven by an agent (e.g. Claude Code) so it can

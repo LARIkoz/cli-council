@@ -28,9 +28,13 @@ synthesizes — and is kept OFF its own audit panel (no self-approval). See
 ## Procedure
 
 1. **Preflight.** `council` on PATH (repo `install.sh`, or put `bin/` on PATH) +
-   `council.toml` enrolling your voices — copy `council.example.toml`, enrol only voices
-   whose `python3 installer/doctor.py smoke <voice>` PASSES. The engine auto-discovers
-   `council.toml`; an explicit `--config <path>` to a file that doesn't exist fails loud.
+   `council.toml` enrolling your voices — the blessed path is `python3 installer/doctor.py
+enroll claude <voice>...`: it re-smokes each and writes a GATED config with the `[review]`
+   audit + redteam panels already filled in from your voices. Hand-copying
+   `council.example.toml` works too, but its `[review]` block ships commented out — leave it
+   commented and the run is `unverified` (no audit gate, no `AUDIT_VERDICT.md`). The engine
+   auto-discovers `council.toml`; an explicit `--config <path>` to a file that doesn't exist
+   fails loud.
 
 2. **Determine target** (one `council review` input form):
    - Empty arg → `council review` (uncommitted `git diff HEAD`)

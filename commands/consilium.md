@@ -33,8 +33,11 @@ Claude models) count as one family.
 ## Procedure
 
 1. **Preflight.** `council` must be on PATH (run the repo's `install.sh`, or put `bin/`
-   on PATH) and `council.toml` must enrol your voices — copy `council.example.toml` and
-   keep only voices whose `python3 installer/doctor.py smoke <voice>` PASSES. The engine
+   on PATH) and `council.toml` must enrol your voices — the blessed path is `python3
+installer/doctor.py enroll claude <voice>...`: it re-smokes each and writes a GATED config
+   with the `[decide]` audit panel already filled in from your voices. Hand-copying
+   `council.example.toml` works too, but its `[decide]` block ships commented out — leave it
+   commented and the run is `unverified` (no audit gate, no `AUDIT_VERDICT.md`). The engine
    auto-discovers `council.toml` (cwd or the repo root); an explicit `--config <path>` to
    a file that doesn't exist fails loud (it won't silently fall back to one voice).
 

@@ -63,6 +63,21 @@ class TestEnrollSmokeGate(unittest.TestCase):
         self.assertEqual(cfg["review"]["audit"], ["codex"])
         self.assertEqual(cfg["review"]["redteam"], ["codex"])
 
+    def test_reenroll_preserves_timeout_and_providers(self):
+        # A user's documented [council].timeout escape hatch and hand-written
+        # [providers.*] blocks must survive a re-enroll — enroll owns voices/chairman/
+        # panels, not those. (Panels ARE regenerated from the new voice set.)
+        import tomllib
+        self._tmp.write_text(
+            '[council]\nvoices = ["claude"]\nchairman = "claude"\ntimeout = 720\n'
+            '[review]\naudit = ["stale"]\n'  # a stale hand-tuned panel — should be regenerated
+            '\n[providers.deepseek]\ntype = "http"\nkey_env = "DEEPSEEK_API_KEY"\n')
+        doctor.enroll(["claude", "codex"], verify=False)
+        cfg = tomllib.loads(self._tmp.read_text())
+        self.assertEqual(cfg["council"]["timeout"], 720)              # preserved
+        self.assertEqual(cfg["providers"]["deepseek"]["type"], "http")  # preserved
+        self.assertEqual(cfg["review"]["audit"], ["codex"])          # regenerated, not "stale"
+
 
 if __name__ == "__main__":
     unittest.main()
