@@ -135,7 +135,14 @@ def _build_providers(data: dict) -> dict[str, Provider]:
 def _find(path: str | None) -> Path | None:
     if path:
         p = Path(path)
-        return p if p.is_file() else None
+        if not p.is_file():
+            # An EXPLICIT --config that doesn't exist is a typo/wrong-path footgun, not
+            # a request for defaults. Fail loud rather than silently run native-only
+            # Claude (the wrong roster). Auto-discovery (no path) still falls back below.
+            raise ValueError(
+                f"--config {path}: not a file. Omit --config for auto-discovery / "
+                f"native-only defaults, or point it at a real council.toml.")
+        return p
     for base in (Path.cwd(), Path(__file__).resolve().parent.parent):
         cand = base / DEFAULT_CONFIG_NAME
         if cand.is_file():

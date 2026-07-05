@@ -215,21 +215,27 @@ def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
         kind = "finding" if result.redteam_verdict in _FINDING else "infra"
         kinds.add(kind)
         result.degraded_reasons.append(f"redteam={result.redteam_verdict} [{kind}]")
-    # A CONFIGURED verifier that errored (dead voice / timeout / unparseable) could not
-    # run — infra degradation even when the SURVIVING panelists said CLEAN. Total panel
-    # death already shows as UNAVAILABLE above; this catches PARTIAL death, which the
-    # aggregated verdict alone hides (half a mandatory audit ran, yet it read clean).
-    panels_with_errors = [name for name, panel in
-                          (("audit", result.audit_panel), ("redteam", result.redteam_panel))
-                          if panel and panel.errors]
-    if panels_with_errors:
-        kinds.add("infra")
-        for name in panels_with_errors:
-            panel = result.audit_panel if name == "audit" else result.redteam_panel
+    # A CONFIGURED verifier that couldn't be USED is a coverage gap → infra, even when
+    # the SURVIVING panelists said CLEAN. Two ways to be unusable: DEAD (in panel.errors)
+    # or LIVE-BUT-UNPARSEABLE (its verdict isn't in the order → excluded from the worst-
+    # wins vote, but it is NOT in .errors — so counting only .errors would miss it). A
+    # total gap already shows as UNAVAILABLE above; this catches PARTIAL gaps the verdict
+    # alone hides (half a mandatory audit ran / didn't parse, yet the run read clean).
+    def _gap(panel, order):
+        if not panel:
+            return []
+        dead = set(panel.errors)
+        unparsed = {v for v, verd in panel.verdicts.items() if verd not in order}
+        return sorted(dead | unparsed)
+    gaps = {"audit": _gap(result.audit_panel, AUDIT_ORDER),
+            "redteam": _gap(result.redteam_panel, REDTEAM_ORDER)}
+    for name, voices in gaps.items():
+        if voices:
+            kinds.add("infra")
             result.degraded_reasons.append(
-                f"{name} verifier(s) could not run: {', '.join(sorted(panel.errors))} [infra]")
+                f"{name} verifier(s) could not run/parse: {', '.join(voices)} [infra]")
     result.degraded_kind = "mixed" if len(kinds) > 1 else (kinds.pop() if kinds else "")
     result.pipeline_clean = (result.audit_verdict == "CLEAN"
                              and result.redteam_verdict in ("HOLDS", "SKIPPED")
-                             and not panels_with_errors)
+                             and not gaps["audit"] and not gaps["redteam"])
     return result

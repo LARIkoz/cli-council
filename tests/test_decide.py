@@ -138,6 +138,7 @@ class TestDecidePipeline(unittest.TestCase):
         self.chairman_empty = False       # flip on for a rc=0-but-empty synthesis
         self.audit_dies = False           # flip on to kill the whole audit panel
         self.audit_dead_voices = set()    # kill only these audit panelists (partial death)
+        self.audit_garbles = set()        # these return LIVE but unparseable output (ERROR)
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Recommendations to rank" in prompt:
@@ -158,6 +159,8 @@ class TestDecidePipeline(unittest.TestCase):
             self.audit_seen.append(prompt)
             if self.audit_dies or p.name in self.audit_dead_voices:
                 return False, f"{p.name}: auditor process died"
+            if p.name in self.audit_garbles:
+                return True, "Some rambling analysis with no leading verdict word at all."
             return True, f"{self.audit_verdict}\nchecked"
 
         self._p1 = mock.patch("council.stages.invoke", fake_stage_invoke)
@@ -277,6 +280,18 @@ class TestDecidePipeline(unittest.TestCase):
         self.assertEqual(res.degraded_kind, "infra")
         self.assertTrue(any("could not run" in r for r in res.degraded_reasons))
 
+    def test_unparseable_auditor_degrades_infra(self):
+        # #10 — a LIVE auditor whose output has no parseable verdict ("ERROR") is excluded
+        # from the worst-wins vote but is NOT a dead voice; counting only survivors would
+        # read CLEAN. It's a coverage gap → degraded [infra], not a silent clean.
+        self.audit_garbles = {"agy"}
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.verification.audit_verdict, "CLEAN")        # codex parsed CLEAN
+        self.assertEqual(res.verification.audit_panel.verdicts["agy"], "ERROR")
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertTrue(any("run/parse" in r for r in res.degraded_reasons))
+
 
 class TestDecideConfig(unittest.TestCase):
     """[decide] panels + `family` parsing + the roster shape AC9 depends on."""
@@ -341,6 +356,13 @@ class TestDecideConfig(unittest.TestCase):
                 audit = ["ghostvoice"]
             """))
         self.assertIn("ghostvoice", str(e.exception))
+
+    def test_explicit_missing_config_raises_not_silent(self):
+        # #11 — an explicit --config that doesn't exist must FAIL LOUD, not silently fall
+        # back to native-only Claude (the wrong-roster footgun).
+        with self.assertRaises(ValueError) as e:
+            config.load("/no/such/dir/council-does-not-exist.toml")
+        self.assertIn("not a file", str(e.exception))
 
 
 class TestEmptyOutputGuard(unittest.TestCase):
