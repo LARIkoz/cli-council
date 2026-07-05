@@ -131,12 +131,14 @@ def run_council(question: str, voices: list[str], chairman: str,
         for fut in as_completed(futs):
             v = futs[fut]
             ok, out = fut.result()
-            if ok:
+            if ok and out.strip():
                 res.opinions[v] = out
                 log(f"    {v} ✓")
             else:
-                res.opinion_errors[v] = out
-                log(f"    {v} ✗ {out}")
+                # ok-but-empty (rc=0, no content) is a failure, not an answer — else an
+                # empty voice would pad the family quorum and the raw-voice set.
+                res.opinion_errors[v] = out if not ok else "returned empty output"
+                log(f"    {v} ✗ {res.opinion_errors[v]}")
     if not res.opinions:
         raise RuntimeError("all voices failed at stage 1: " + "; ".join(res.opinion_errors.values()))
 
@@ -189,28 +191,32 @@ def run_council(question: str, voices: list[str], chairman: str,
         log(f"    chairman '{chairman}' had no answer; using '{chair}'")
         res.chairman = chair
     ok, out = invoke(providers[chair], _chairman_prompt(res, mode), resolve_timeout(providers[chair], timeout))
-    if ok:
+    if ok and out.strip():
         res.final = out
         log("    ✓")
     else:
-        # Loud fallback: no synthesis, hand back the peer-top answer, labeled — AND
-        # record the error. The fallback IS a raw voice, so it trivially passes audit;
-        # without this signal the pipeline gate would read the failed run as "clean".
+        # Failure OR a rc=0-but-empty synthesis (some CLIs exit 0 with no content) —
+        # both are a synthesis failure. Fall back to the peer-top RAW answer, labeled,
+        # AND record the error: the fallback IS a raw voice, so it trivially passes
+        # audit; without this signal the pipeline gate would read the run as "clean".
+        err = out if not ok else "chairman returned an empty synthesis"
         top = res.board.top if res.board else next(iter(res.opinions))
-        res.final = (f"[chairman '{chair}' failed: {out}]\n\n"
+        res.final = (f"[chairman '{chair}' failed: {err}]\n\n"
                      f"Peer-top answer ({top}):\n{res.opinions.get(top, '')}")
-        res.synthesis_error = out
-        log(f"    ✗ {out} — fell back to peer-top answer")
+        res.synthesis_error = err
+        log(f"    ✗ {err} — fell back to peer-top answer")
     return res
 
 
 def _chairman_prompt(res: CouncilResult, mode: Mode = ASK) -> str:
     answers = "\n\n".join(f"[{v}]\n{a}" for v, a in res.opinions.items())
-    if res.board and res.board.rows:
+    if res.orders and res.board and res.board.rows:
         lb = "\n".join(f"{i}. {r['voice']}  (mean rank {r['mean_rank']}, "
                        f"borda {r['borda']}, {r['firsts']} firsts)"
                        for i, r in enumerate(res.board.rows, 1))
     else:
+        # No ranking parsed this run (res.orders empty) — the board rows would all be
+        # mean_rank=None, a bogus leaderboard; give the chairman the honest fallback.
         lb = "(no parseable rankings this run — weigh answers on their merits)"
     crit = "\n\n".join(f"— {v} wrote:\n{c}" for v, c in res.critiques.items()) or "(none)"
     return mode.chairman_prompt.format(subject=res.question, answers=answers,

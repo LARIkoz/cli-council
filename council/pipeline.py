@@ -34,28 +34,46 @@ class PipelineResult:
     degraded_reasons: list = field(default_factory=list)
 
 
+def _council_infra(rev) -> list[str]:
+    """Council-level infra signals that must degrade a run regardless of the audit
+    verdict — a verifier reading CLEAN cannot launder them:
+    - a synthesis-stage failure: `final` is a loud peer-top fallback (a raw voice),
+      so the audit trivially passes it;
+    - a council that collapsed to ONE voice: no peer ranking or cross-checked synthesis
+      happened, and the audit would compare the lone answer to itself → a hollow CLEAN.
+    (decide can't reach the 1-voice case — the ≥3-family quorum aborts first.)"""
+    reasons = []
+    if rev.council.synthesis_error:
+        reasons.append(f"synthesis failed: {rev.council.synthesis_error} [infra]")
+    if len(rev.council.opinions) <= 1:
+        reasons.append(f"council ran with only {len(rev.council.opinions)} voice — no peer "
+                       f"review or cross-checked synthesis [infra]")
+    return reasons
+
+
 def _unverified(rev) -> PipelineResult:
-    """No verification configured → 'unverified'. But a synthesis-stage failure is
-    never a benign 'unverified': the chairman fell back to a raw voice, so surface it
-    as degraded [infra] — it must not read as a bare-but-fine review."""
-    err = rev.council.synthesis_error
-    if err:
+    """No verification configured → 'unverified'. But a council-level infra failure
+    (synthesis failed, or the council collapsed to one voice) is never a benign
+    'unverified' — surface it as degraded [infra]."""
+    infra = _council_infra(rev)
+    if infra:
         return PipelineResult(review=rev, status="degraded", degraded_kind="infra",
-                              degraded_reasons=[f"synthesis failed: {err} [infra]"])
+                              degraded_reasons=infra)
     return PipelineResult(review=rev, status="unverified")
 
 
 def _gate(rev, ver, log) -> PipelineResult:
-    """Fold the verification verdict together with a synthesis-stage failure into the
-    final gate. A chairman that failed leaves `final` = the peer-top RAW answer, which
-    trivially passes audit (it IS a raw voice) — so the audit verdict alone would call
-    the run clean. A synthesis that never happened is never clean: fold the failure in
-    as [infra], merged with any audit/redteam finding (→ 'mixed')."""
+    """Fold the verification verdict together with council-level infra failures into the
+    final gate. The audit verdict alone can read CLEAN on a run that never really ran a
+    council (chairman failed → fallback is a raw voice; or only one voice answered → the
+    audit self-compares); those are never clean — fold them in as [infra], merged with
+    any audit/redteam finding (→ 'mixed')."""
     reasons = list(ver.degraded_reasons)
     kinds = {ver.degraded_kind} if ver.degraded_kind else set()
     clean = ver.pipeline_clean
-    if rev.council.synthesis_error:
-        reasons.append(f"synthesis failed: {rev.council.synthesis_error} [infra]")
+    infra = _council_infra(rev)
+    if infra:
+        reasons += infra
         kinds.add("infra")
         clean = False
     kind = "mixed" if len(kinds) > 1 else (next(iter(kinds)) if kinds else "")

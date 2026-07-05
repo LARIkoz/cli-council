@@ -235,7 +235,7 @@ def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[
             err = (proc.stderr or proc.stdout or "").strip()
             return False, f"{p.name}: exit {proc.returncode}: {err[:400]}"
         text = p.extract(proc.stdout or "")
-        if len(text) < 1:
+        if not text.strip():                      # rc=0 but empty OR whitespace-only = no answer
             return False, f"{p.name}: empty output (stderr: {(proc.stderr or '')[:200]})"
         return True, text
     except subprocess.TimeoutExpired:

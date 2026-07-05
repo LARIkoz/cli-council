@@ -220,6 +220,24 @@ class TestPromptFileFallback(unittest.TestCase):
         self.assertIsNone(captured["input"])                  # file mode → no stdin
         self.assertTrue(any(a.endswith(".txt") for a in captured["argv"]))  # temp path injected
 
+    def test_whitespace_only_output_is_empty(self):
+        # invoke rejects a rc=0 whitespace-only stdout as "empty output" (not a valid
+        # answer), so an all-blank voice or chairman can't slip through as ok.
+        p = P.Provider(name="x", bin="tool", argv=["tool"])
+
+        def fake_run(argv, input=None, **kw):
+            r = mock.Mock()
+            r.returncode = 0
+            r.stdout = "  \n\t "        # rc=0 but no real content
+            r.stderr = ""
+            return r
+
+        with mock.patch.object(P, "is_installed", lambda _p: True), \
+                mock.patch.object(P.subprocess, "run", fake_run):
+            ok, out = P.invoke(p, "PROMPT", timeout=5)
+        self.assertFalse(ok)
+        self.assertIn("empty output", out)
+
 
 class TestHttpConfig(unittest.TestCase):
     def _write(self, body: str) -> str:

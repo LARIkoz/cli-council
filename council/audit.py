@@ -215,7 +215,21 @@ def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
         kind = "finding" if result.redteam_verdict in _FINDING else "infra"
         kinds.add(kind)
         result.degraded_reasons.append(f"redteam={result.redteam_verdict} [{kind}]")
+    # A CONFIGURED verifier that errored (dead voice / timeout / unparseable) could not
+    # run — infra degradation even when the SURVIVING panelists said CLEAN. Total panel
+    # death already shows as UNAVAILABLE above; this catches PARTIAL death, which the
+    # aggregated verdict alone hides (half a mandatory audit ran, yet it read clean).
+    panels_with_errors = [name for name, panel in
+                          (("audit", result.audit_panel), ("redteam", result.redteam_panel))
+                          if panel and panel.errors]
+    if panels_with_errors:
+        kinds.add("infra")
+        for name in panels_with_errors:
+            panel = result.audit_panel if name == "audit" else result.redteam_panel
+            result.degraded_reasons.append(
+                f"{name} verifier(s) could not run: {', '.join(sorted(panel.errors))} [infra]")
     result.degraded_kind = "mixed" if len(kinds) > 1 else (kinds.pop() if kinds else "")
     result.pipeline_clean = (result.audit_verdict == "CLEAN"
-                             and result.redteam_verdict in ("HOLDS", "SKIPPED"))
+                             and result.redteam_verdict in ("HOLDS", "SKIPPED")
+                             and not panels_with_errors)
     return result

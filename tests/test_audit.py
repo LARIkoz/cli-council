@@ -273,6 +273,7 @@ class TestPipelineComposition(unittest.TestCase):
         self.providers = {v: _dummy(v) for v in ("a", "b")}
         self.logs = []
         self.chairman_fails = False       # flip on to simulate a chairman/synth timeout
+        self.dead_voices = set()          # voices that fail at stage 1 (collapse the council)
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Reviews to rank" in prompt:
@@ -284,6 +285,8 @@ class TestPipelineComposition(unittest.TestCase):
                 if self.chairman_fails:
                     return False, "timeout after 600s"
                 return True, "FIX\n\n## BLOCKER\nf.py:1 — bad"
+            if p.name in self.dead_voices:               # stage-1 death
+                return False, f"{p.name}: dead"
             return True, f"SHIP-WITH-EDITS\nreview by {p.name}"
 
         def fake_panel_invoke(p, prompt, timeout):
@@ -325,6 +328,15 @@ class TestPipelineComposition(unittest.TestCase):
         self.assertEqual(res.status, "degraded")
         self.assertEqual(res.degraded_kind, "infra")
         self.assertTrue(any("synthesis failed" in r for r in res.degraded_reasons))
+
+    def test_one_voice_council_degrades_infra(self):
+        # #8 — if all but one voice die at stage 1, the "council" is a single opinion the
+        # audit self-compares → hollow CLEAN. Must degrade [infra], not read clean.
+        self.dead_voices = {"b"}       # only 'a' survives stage 1
+        res = self._run(audit_voices=["a"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertTrue(any("only 1 voice" in r for r in res.degraded_reasons))
 
 
 if __name__ == "__main__":

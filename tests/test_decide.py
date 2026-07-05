@@ -135,6 +135,9 @@ class TestDecidePipeline(unittest.TestCase):
                           "agy": _v("agy", "google")}
         self.audit_seen = []
         self.chairman_fails = False       # flip on to simulate a chairman/synth timeout
+        self.chairman_empty = False       # flip on for a rc=0-but-empty synthesis
+        self.audit_dies = False           # flip on to kill the whole audit panel
+        self.audit_dead_voices = set()    # kill only these audit panelists (partial death)
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Recommendations to rank" in prompt:
@@ -144,6 +147,8 @@ class TestDecidePipeline(unittest.TestCase):
             if "chair of a decision council" in prompt:
                 if self.chairman_fails:
                     return False, "timeout after 600s"
+                if self.chairman_empty:
+                    return True, "   "
                 return True, "Adopt Postgres.\n\n## IMPORTANT\nmigrate — scales better."
             return True, f"Recommend Postgres\nby {p.name}"
 
@@ -151,6 +156,8 @@ class TestDecidePipeline(unittest.TestCase):
 
         def fake_panel_invoke(p, prompt, timeout):
             self.audit_seen.append(prompt)
+            if self.audit_dies or p.name in self.audit_dead_voices:
+                return False, f"{p.name}: auditor process died"
             return True, f"{self.audit_verdict}\nchecked"
 
         self._p1 = mock.patch("council.stages.invoke", fake_stage_invoke)
@@ -234,6 +241,42 @@ class TestDecidePipeline(unittest.TestCase):
         self.assertNotIn("phantom_files", names)
         self.assertIn("severity_headings", names)
 
+    def test_empty_chairman_synthesis_degrades(self):
+        # a rc=0-but-empty synthesis is still a synthesis failure — never clean.
+        self.chairman_empty = True
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertIn("empty synthesis", res.review.council.synthesis_error)
+
+    def test_synth_fail_and_audit_issue_is_mixed(self):
+        # a synthesis failure AND a real audit finding together → degraded_kind "mixed".
+        self.chairman_fails = True
+        self.audit_verdict = "ISSUES"
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "mixed")
+
+    def test_all_auditors_dead_degrades_infra(self):
+        # the mandatory audit panel fails closed: every auditor dead → UNAVAILABLE →
+        # degraded [infra], never a silent clean.
+        self.audit_dies = True
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.verification.audit_verdict, "UNAVAILABLE")
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+
+    def test_partial_audit_panel_death_degrades_infra(self):
+        # #7 — one auditor dead, the other CLEAN: the surviving verdict is CLEAN, but a
+        # configured verifier could not run → degraded [infra], never a silent clean.
+        self.audit_dead_voices = {"agy"}
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.verification.audit_verdict, "CLEAN")      # codex survived
+        self.assertIn("agy", res.verification.audit_panel.errors)      # agy's death recorded
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertTrue(any("could not run" in r for r in res.degraded_reasons))
+
 
 class TestDecideConfig(unittest.TestCase):
     """[decide] panels + `family` parsing + the roster shape AC9 depends on."""
@@ -298,6 +341,62 @@ class TestDecideConfig(unittest.TestCase):
                 audit = ["ghostvoice"]
             """))
         self.assertIn("ghostvoice", str(e.exception))
+
+
+class TestEmptyOutputGuard(unittest.TestCase):
+    """rc=0-but-empty output is a failure, not an answer — stage 1 AND the chairman."""
+
+    def test_empty_opinion_is_dropped_not_counted(self):
+        provs = {"opus": _v("opus", "anthropic"), "codex": _v("codex", "openai"),
+                 "agy": _v("agy", "google"), "grok": _v("grok", "xai")}
+
+        def fake(p, prompt, timeout):
+            if "Recommendations to rank" in prompt:
+                labels = re.findall(r"### (Response [A-Z])", prompt)
+                return True, "FINAL RANKING:\n" + "\n".join(
+                    f"{i}. {l}" for i, l in enumerate(labels, 1))
+            if "chair of a decision council" in prompt:
+                return True, "Do it.\n\n## IMPORTANT\nx"
+            return (True, "  ") if p.name == "agy" else (True, f"answer from {p.name}")
+
+        with mock.patch.object(stages, "invoke", fake):
+            subject, target = decide.build_decide_prompt("go?")
+            res = decide.run_decide(subject, target, voices=["opus", "codex", "agy", "grok"],
+                                    chairman="opus", providers=provs)
+        # agy returned empty → dropped from opinions, recorded as an error (not padding
+        # the family quorum or the raw-voice set).
+        self.assertNotIn("agy", res.council.opinions)
+        self.assertEqual(res.council.opinion_errors.get("agy"), "returned empty output")
+        self.assertIn("opus", res.council.opinions)
+        self.assertEqual(sorted(res.reviewers), ["codex", "grok", "opus"])
+
+
+class TestRankingFallback(unittest.TestCase):
+    """#9 — when NO ranking parses, the chairman gets the honest '(no parseable
+    rankings)' fallback, not a bogus mean_rank=None leaderboard."""
+
+    def test_all_rankings_fail_gives_no_ranking_fallback(self):
+        provs = {"opus": _v("opus", "anthropic"), "codex": _v("codex", "openai"),
+                 "agy": _v("agy", "google")}
+        seen = {}
+
+        def fake(p, prompt, timeout):
+            if "Recommendations to rank" in prompt:
+                return True, "I refuse to give a ranking block."     # unparseable → rank_error
+            if "chair of a decision council" in prompt:
+                seen["chair"] = prompt
+                return True, "Do it.\n\n## IMPORTANT\nx"
+            return True, f"answer from {p.name}"
+
+        with mock.patch.object(stages, "invoke", fake):
+            subject, target = decide.build_decide_prompt("go?")
+            res = decide.run_decide(subject, target, voices=["opus", "codex", "agy"],
+                                    chairman="opus", providers=provs)
+        # no ranking parsed → orders empty, and the chairman gets the honest fallback,
+        # not a "mean rank None" leaderboard.
+        self.assertEqual(res.council.orders, {})
+        self.assertIn("no parseable rankings this run", seen["chair"])
+        self.assertNotIn("mean rank None", seen["chair"])
 
 
 if __name__ == "__main__":
