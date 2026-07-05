@@ -103,6 +103,15 @@ class TestMechanicalChecks(unittest.TestCase):
         self.assertFalse(next(c for c in audit._mechanical_checks(without, "x")
                               if c["check"] == "severity_headings")["pass"])
 
+    def test_phantom_check_skipped_when_no_change(self):
+        # decide passes check_files=False — a decision has no diff to compare against,
+        # so real files a voice names aren't phantoms; only severity_headings runs.
+        synthesis = "Use `council.toml`; see `providers.py`."
+        checks = audit._mechanical_checks(synthesis, "a question, no diff", check_files=False)
+        names = [c["check"] for c in checks]
+        self.assertNotIn("phantom_files", names)
+        self.assertIn("severity_headings", names)
+
 
 class TestVerdictParse(unittest.TestCase):
     def test_audit_verdicts(self):
@@ -263,6 +272,7 @@ class TestPipelineComposition(unittest.TestCase):
     def setUp(self):
         self.providers = {v: _dummy(v) for v in ("a", "b")}
         self.logs = []
+        self.chairman_fails = False       # flip on to simulate a chairman/synth timeout
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Reviews to rank" in prompt:
@@ -271,6 +281,8 @@ class TestPipelineComposition(unittest.TestCase):
                 return True, "FINAL RANKING:\n" + "\n".join(
                     f"{i}. {l}" for i, l in enumerate(labels, 1))
             if "lead reviewer" in prompt:
+                if self.chairman_fails:
+                    return False, "timeout after 600s"
                 return True, "FIX\n\n## BLOCKER\nf.py:1 — bad"
             return True, f"SHIP-WITH-EDITS\nreview by {p.name}"
 
@@ -304,6 +316,15 @@ class TestPipelineComposition(unittest.TestCase):
     def test_self_audit_warning_logged(self):
         self._run(audit_voices=["a"], redteam_voices=[])  # chairman 'a' audits itself
         self.assertTrue(any("its own audit panel" in m for m in self.logs))
+
+    def test_chairman_failure_degrades_infra(self):
+        # #1 (review side of the shared gate) — a synthesis failure never reads clean,
+        # even when the audit panel is CLEAN on the raw-voice fallback.
+        self.chairman_fails = True
+        res = self._run(audit_voices=["a", "b"], redteam_voices=["a", "b"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertTrue(any("synthesis failed" in r for r in res.degraded_reasons))
 
 
 if __name__ == "__main__":

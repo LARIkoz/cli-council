@@ -34,6 +34,38 @@ class PipelineResult:
     degraded_reasons: list = field(default_factory=list)
 
 
+def _unverified(rev) -> PipelineResult:
+    """No verification configured → 'unverified'. But a synthesis-stage failure is
+    never a benign 'unverified': the chairman fell back to a raw voice, so surface it
+    as degraded [infra] — it must not read as a bare-but-fine review."""
+    err = rev.council.synthesis_error
+    if err:
+        return PipelineResult(review=rev, status="degraded", degraded_kind="infra",
+                              degraded_reasons=[f"synthesis failed: {err} [infra]"])
+    return PipelineResult(review=rev, status="unverified")
+
+
+def _gate(rev, ver, log) -> PipelineResult:
+    """Fold the verification verdict together with a synthesis-stage failure into the
+    final gate. A chairman that failed leaves `final` = the peer-top RAW answer, which
+    trivially passes audit (it IS a raw voice) — so the audit verdict alone would call
+    the run clean. A synthesis that never happened is never clean: fold the failure in
+    as [infra], merged with any audit/redteam finding (→ 'mixed')."""
+    reasons = list(ver.degraded_reasons)
+    kinds = {ver.degraded_kind} if ver.degraded_kind else set()
+    clean = ver.pipeline_clean
+    if rev.council.synthesis_error:
+        reasons.append(f"synthesis failed: {rev.council.synthesis_error} [infra]")
+        kinds.add("infra")
+        clean = False
+    kind = "mixed" if len(kinds) > 1 else (next(iter(kinds)) if kinds else "")
+    status = "clean" if clean else "degraded"
+    tag = f" [{kind}]" if kind else ""
+    log(f"gate · {status}{tag}" + (f" ({'; '.join(reasons)})" if reasons else ""))
+    return PipelineResult(review=rev, verification=ver, status=status,
+                          degraded_kind=kind, degraded_reasons=reasons)
+
+
 def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: str,
                         providers: dict[str, Provider],
                         audit_voices: list[str] | None = None,
@@ -46,7 +78,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
     rev = reviewmod.run_review(subject, target, voices, chairman, providers, timeout, log=log)
 
     if not (audit_voices or redteam_voices):
-        return PipelineResult(review=rev, status="unverified")
+        return _unverified(rev)
 
     # Self-audit is the sharpest bias: the chairman approving its own synthesis.
     # A diverse panel dilutes it (1 vote of N under worst-wins), but say it loudly.
@@ -66,13 +98,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
         timeout=timeout,
         log=log,
     )
-    status = "clean" if ver.pipeline_clean else "degraded"
-    tag = f" [{ver.degraded_kind}]" if ver.degraded_kind else ""
-    log(f"gate · {status}{tag}"
-        + (f" ({'; '.join(ver.degraded_reasons)})" if ver.degraded_reasons else ""))
-    return PipelineResult(review=rev, verification=ver, status=status,
-                          degraded_kind=ver.degraded_kind,
-                          degraded_reasons=list(ver.degraded_reasons))
+    return _gate(rev, ver, log)
 
 
 def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
@@ -87,7 +113,9 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
     differences: the decision-framed audit/redteam prompts, and redteam is OFF by
     default (empty `redteam_voices`) — a recommendation has no ground-truth claim
     to refute, so the audit is the mandatory guard (NFR2). The gate, status
-    vocabulary, and worst-wins rules are the same engine — no fork."""
+    vocabulary, and worst-wins rules are the same engine — no fork. The phantom-file
+    mechanical check is off (check_files=False): a decision has no diff, so a real
+    repo file a voice names is not a phantom."""
     audit_voices = list(audit_voices or [])
     redteam_voices = list(redteam_voices or [])
 
@@ -95,7 +123,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
                                timeout, min_families=min_families, log=log)
 
     if not (audit_voices or redteam_voices):
-        return PipelineResult(review=rev, status="unverified")
+        return _unverified(rev)
 
     actual_chair = rev.council.chairman or chairman
     if actual_chair in audit_voices:
@@ -113,12 +141,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
         timeout=timeout,
         audit_prompt=decidemod.DECISION_AUDIT_PROMPT,
         redteam_prompt=decidemod.DECISION_REDTEAM_PROMPT,
+        check_files=False,
         log=log,
     )
-    status = "clean" if ver.pipeline_clean else "degraded"
-    tag = f" [{ver.degraded_kind}]" if ver.degraded_kind else ""
-    log(f"gate · {status}{tag}"
-        + (f" ({'; '.join(ver.degraded_reasons)})" if ver.degraded_reasons else ""))
-    return PipelineResult(review=rev, verification=ver, status=status,
-                          degraded_kind=ver.degraded_kind,
-                          degraded_reasons=list(ver.degraded_reasons))
+    return _gate(rev, ver, log)

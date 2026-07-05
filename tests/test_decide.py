@@ -134,6 +134,7 @@ class TestDecidePipeline(unittest.TestCase):
         self.providers = {"opus": _v("opus", "anthropic"), "codex": _v("codex", "openai"),
                           "agy": _v("agy", "google")}
         self.audit_seen = []
+        self.chairman_fails = False       # flip on to simulate a chairman/synth timeout
 
         def fake_stage_invoke(p, prompt, timeout):
             if "Recommendations to rank" in prompt:
@@ -141,6 +142,8 @@ class TestDecidePipeline(unittest.TestCase):
                 return True, "FINAL RANKING:\n" + "\n".join(
                     f"{i}. {l}" for i, l in enumerate(labels, 1))
             if "chair of a decision council" in prompt:
+                if self.chairman_fails:
+                    return False, "timeout after 600s"
                 return True, "Adopt Postgres.\n\n## IMPORTANT\nmigrate — scales better."
             return True, f"Recommend Postgres\nby {p.name}"
 
@@ -202,6 +205,34 @@ class TestDecidePipeline(unittest.TestCase):
             pipeline.run_decide_pipeline(subject, target, ["opus", "sonnet"], "opus",
                                          two_fam, audit_voices=["opus"], log=lambda *_: None)
         self.assertIn("family quorum", str(e.exception))
+
+    def test_chairman_failure_degrades_infra(self):
+        # #1 — a chairman/synthesis failure must NOT read as clean. The fallback is a
+        # raw voice (which trivially passes audit), so the gate folds the failure in.
+        self.chairman_fails = True
+        res = self._run(audit_voices=["codex", "agy"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertEqual(res.review.council.synthesis_error, "timeout after 600s")
+        self.assertTrue(any("synthesis failed" in r for r in res.degraded_reasons))
+        # the audit panel itself was CLEAN on the fallback text — degraded is despite it.
+        self.assertEqual(res.verification.audit_verdict, "CLEAN")
+
+    def test_chairman_failure_degrades_without_panels(self):
+        # #1 at the no-verification path — must not read as a bare 'unverified' either.
+        self.chairman_fails = True
+        res = self._run()
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertIsNone(res.verification)
+
+    def test_decide_skips_phantom_file_mechanical_check(self):
+        # #2 — decide passes check_files=False (a decision has no diff), so a real repo
+        # file a voice names is not a "phantom". Only severity_headings runs.
+        res = self._run(audit_voices=["codex"])
+        names = [c["check"] for c in res.verification.mechanical]
+        self.assertNotIn("phantom_files", names)
+        self.assertIn("severity_headings", names)
 
 
 class TestDecideConfig(unittest.TestCase):

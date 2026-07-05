@@ -119,22 +119,29 @@ def _parse_first_word(text: str, valid: tuple) -> str:
     return aggregate.parse_leading_verdict(text, valid) or "ERROR"
 
 
-def _mechanical_checks(synthesis: str, subject: str) -> list[dict]:
+def _mechanical_checks(synthesis: str, subject: str, check_files: bool = True) -> list[dict]:
     """Structural grep checks — no model call, deterministic. Each returns a dict
-    with {check, pass, detail}. A failed check is informational, not blocking."""
+    with {check, pass, detail}. A failed check is informational, not blocking.
+
+    `check_files` gates the phantom-file check: it only makes sense when `subject`
+    is a code change (review). A decision's subject is a question, so every real repo
+    file a voice legitimately names would look "phantom" — a false alarm — so decide
+    passes check_files=False."""
     checks = []
 
-    # Check 1: synthesis mentions a file → that file should appear in the subject
-    files_in_synth = set(re.findall(r"`([^`]+\.\w{1,5})(?::\d+)?`", synthesis))
-    files_in_subject = set(re.findall(r"(?:^|\s)([a-zA-Z_][\w/.-]*\.\w{1,5})", subject))
-    phantom = files_in_synth - files_in_subject
-    if phantom:
-        checks.append({"check": "phantom_files", "pass": False,
-                       "detail": f"synthesis references files not in the change: {sorted(phantom)}"})
-    else:
-        checks.append({"check": "phantom_files", "pass": True, "detail": "all referenced files present"})
+    # Check 1 (review only): a file the synthesis names should appear in the subject
+    # (the diff). Skipped for decide — there is no change to compare names against.
+    if check_files:
+        files_in_synth = set(re.findall(r"`([^`]+\.\w{1,5})(?::\d+)?`", synthesis))
+        files_in_subject = set(re.findall(r"(?:^|\s)([a-zA-Z_][\w/.-]*\.\w{1,5})", subject))
+        phantom = files_in_synth - files_in_subject
+        if phantom:
+            checks.append({"check": "phantom_files", "pass": False,
+                           "detail": f"synthesis references files not in the change: {sorted(phantom)}"})
+        else:
+            checks.append({"check": "phantom_files", "pass": True, "detail": "all referenced files present"})
 
-    # Check 2: synthesis is non-empty and has severity headings
+    # Check 2: synthesis is non-empty and has severity headings (valid for both modes)
     has_severity = bool(re.search(r"##\s*(BLOCKER|IMPORTANT|CHECK|ACCEPT|NOISE)", synthesis, re.I))
     checks.append({"check": "severity_headings", "pass": has_severity,
                    "detail": "severity headings present" if has_severity else "no severity headings found"})
@@ -146,7 +153,7 @@ def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
               audit_voices: list[str], redteam_voices: list[str],
               providers: dict[str, Provider], timeout: float | None = None,
               audit_prompt: str = AUDIT_PROMPT, redteam_prompt: str = REDTEAM_PROMPT,
-              log=lambda *_: None) -> AuditResult:
+              check_files: bool = True, log=lambda *_: None) -> AuditResult:
     """Run the verification layer: an audit panel and a redteam panel (each = all
     the voices you name, independent and parallel — the two panels also run
     concurrently with each other), plus instant mechanical checks. Empty voice
@@ -159,7 +166,7 @@ def run_audit(synthesis: str, raw_voices: dict[str, str], subject: str,
     the same across modes — one engine, only the wording differs."""
     result = AuditResult()
 
-    result.mechanical = _mechanical_checks(synthesis, subject)
+    result.mechanical = _mechanical_checks(synthesis, subject, check_files)
     mech_fails = [c for c in result.mechanical if not c["pass"]]
     log(f"mechanical · {len(result.mechanical)} checks, {len(mech_fails)} issues")
 

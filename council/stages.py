@@ -93,6 +93,7 @@ class CouncilResult:
     board: object = None                                # aggregate.Leaderboard | None
     final: str = ""
     chairman: str = ""
+    synthesis_error: str = ""                           # set = chairman synth stage failed (final = loud fallback)
 
 
 def _anonymize(opinions: dict[str, str]) -> tuple[str, dict[str, str]]:
@@ -192,10 +193,13 @@ def run_council(question: str, voices: list[str], chairman: str,
         res.final = out
         log("    ✓")
     else:
-        # Loud fallback: no synthesis, but hand back the peer-top answer, labeled.
+        # Loud fallback: no synthesis, hand back the peer-top answer, labeled — AND
+        # record the error. The fallback IS a raw voice, so it trivially passes audit;
+        # without this signal the pipeline gate would read the failed run as "clean".
         top = res.board.top if res.board else next(iter(res.opinions))
         res.final = (f"[chairman '{chair}' failed: {out}]\n\n"
                      f"Peer-top answer ({top}):\n{res.opinions.get(top, '')}")
+        res.synthesis_error = out
         log(f"    ✗ {out} — fell back to peer-top answer")
     return res
 
