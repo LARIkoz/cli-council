@@ -209,6 +209,20 @@ Two things differ from review, both because a decision has no ground truth:
 `--out` writes the same artifact set (`SYNTHESIS.md`, `AUDIT_VERDICT.md`,
 `RANKINGS.md`, per-voice `v-`/`a-`/`r-` files, `pipeline-status.json`).
 
+## Claude Code commands (optional)
+
+If you drive this from an agent like [Claude Code](https://claude.ai/code),
+[commands/](commands/) holds two ready-made slash-commands over the engine — copy
+them into `~/.claude/commands/`:
+
+- **[commands/consilium.md](commands/consilium.md)** — `/consilium <decision>` →
+  `council decide` (recommendation + action tiers + a mandatory audit gate).
+- **[commands/consreview.md](commands/consreview.md)** — `/consreview [ref]` →
+  `council review` (severity-classified review + audit & redteam gate).
+
+Each calls `council` on your PATH, auto-discovers `council.toml`, reads the artifact
+set, and follows the re-synth protocol when a gate flags the synthesis.
+
 ## Configure
 
 Enrolment lives in `council.toml` (git-ignored, written by `doctor enroll`; see
