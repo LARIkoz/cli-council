@@ -38,6 +38,12 @@ from typing import Callable, Optional
 # genuinely stuck call. Slow voices raise it via Provider.timeout (below).
 DEFAULT_TIMEOUT = 300.0
 
+# A lapse-prone subscription CLI (grok's ~6h OIDC token is the live example) can
+# HANG the real call to the full ceiling once its token expires. An optional cheap
+# preflight (Provider.auth_check) catches that in seconds — cap it well under any
+# real per-voice timeout so a stuck/offline CLI fails fast, never at the ceiling.
+AUTH_CHECK_TIMEOUT = 20.0
+
 # Above this, a prompt is too big to pass as a command-line argument (the OS caps
 # argv+env size, ~256KB on macOS). Inline-arg voices (gemini/agy) fail loudly with
 # a clear message instead of a cryptic OSError; stdin/prompt-file/http voices
@@ -91,6 +97,13 @@ class Provider:
     experimental: bool = False
     env: dict = field(default_factory=dict)
     timeout: float = 0.0  # per-voice ceiling in seconds; 0 = use DEFAULT_TIMEOUT
+    # Optional cheap auth/liveness preflight for CLI voices whose token can lapse.
+    # If set, invoke() runs this argv (short timeout) BEFORE the real call; if the
+    # output contains auth_fail_marker (case-insensitive), the voice fails FAST and
+    # LOUD instead of firing the real call and hanging to the full ceiling. Empty =
+    # no preflight (the default for every voice).
+    auth_check: list = field(default_factory=list)
+    auth_fail_marker: str = ""
     # Model FAMILY (vendor lineage), for the decide-mode family quorum: two voices
     # of one house (opus + sonnet = "anthropic") count as ONE family, so a decision
     # can't reach quorum on a single vendor's models. Empty → the voice is its own
@@ -140,6 +153,12 @@ PROVIDERS: dict[str, Provider] = {
         extract=_grok_json,
         install_hint="curl -fsSL https://x.ai/cli/install.sh | bash",
         login_hint="grok login",
+        # grok's OAuth access token is a short (~6h) OIDC token. When it lapses,
+        # `grok -p` HANGS to the full ceiling, yet `grok models` returns FAST and
+        # prints "You are not authenticated." (even with exit 0) — so preflight on
+        # that string and fail fast instead of eating the 600s timeout.
+        auth_check=["grok", "models"],
+        auth_fail_marker="not authenticated",
         timeout=600.0,  # same as codex: slow on the multi-answer ranking bundle
     ),
     # Experimental: gemini's non-interactive mode + auth vary by setup (some
@@ -199,6 +218,28 @@ def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[
 
     if not is_installed(p):
         return False, f"{p.bin}: not installed"
+
+    # Auth/liveness preflight (opt-in via Provider.auth_check). A subscription CLI
+    # whose token has lapsed can HANG the real call to the full ceiling — grok's ~6h
+    # OIDC token is the live example: unauthenticated `grok -p` blocks, yet
+    # `grok models` returns FAST and even exit 0 while printing "not authenticated".
+    # So gate on the probe's OUTPUT (not its exit code) and fail fast + loud.
+    if p.auth_check:
+        probe_timeout = min(AUTH_CHECK_TIMEOUT, timeout)
+        try:
+            probe = subprocess.run(
+                list(p.auth_check), capture_output=True, text=True,
+                timeout=probe_timeout, env={**_base_env(), **p.env},
+            )
+        except subprocess.TimeoutExpired:
+            return False, (f"{p.name}: auth check ({' '.join(p.auth_check)}) hung "
+                           f">{probe_timeout:.0f}s — CLI stuck or offline; {p.login_hint}")
+        except Exception as e:  # noqa: BLE001 — surface anything, loudly
+            return False, f"{p.name}: auth check failed: {e!r}"
+        if p.auth_fail_marker and p.auth_fail_marker.lower() in (
+            f"{probe.stdout}\n{probe.stderr}".lower()
+        ):
+            return False, f"{p.name}: not authenticated — {p.login_hint}"
 
     tmp: Optional[Path] = None
     try:
