@@ -209,19 +209,33 @@ Two things differ from review, both because a decision has no ground truth:
 `--out` writes the same artifact set (`SYNTHESIS.md`, `AUDIT_VERDICT.md`,
 `RANKINGS.md`, per-voice `v-`/`a-`/`r-` files, `pipeline-status.json`).
 
-## Claude Code commands (optional)
+## Claude Code commands & skills (optional)
 
-If you drive this from an agent like [Claude Code](https://claude.ai/code),
-[commands/](commands/) holds two ready-made slash-commands over the engine — copy
-them into `~/.claude/commands/`:
+If you drive this from an agent like [Claude Code](https://claude.ai/code), the repo
+ships the same two operations in **two invocation styles** — pick whichever you prefer.
+
+**Slash-commands** — you type the slash. [commands/](commands/) → copy into
+`~/.claude/commands/`:
 
 - **[commands/consilium.md](commands/consilium.md)** — `/consilium <decision>` →
   `council decide` (recommendation + action tiers + a mandatory audit gate).
 - **[commands/consreview.md](commands/consreview.md)** — `/consreview [ref]` →
   `council review` (severity-classified review + audit & redteam gate).
 
-Each calls `council` on your PATH, auto-discovers `council.toml`, reads the artifact
-set, and follows the re-synth protocol when a gate flags the synthesis.
+**Skills** — auto-triggering. [skills/](skills/) → copy `consilium/` and `consreview/`
+into `~/.claude/skills/`. The agent invokes them **itself** when your request is a genuine
+decision or a code change that wants the multi-model council — no slash needed (they stay
+`/`-invocable too). Their descriptions are scoped to real council intent (a second opinion,
+several models, deciding between real trade-offs, a hard pre-ship review), so they don't
+fire on trivial or quick-fact questions:
+
+- **[skills/consilium/SKILL.md](skills/consilium/SKILL.md)** — auto-fires the decision council.
+- **[skills/consreview/SKILL.md](skills/consreview/SKILL.md)** — auto-fires the review council.
+
+Both forms call `council` on your PATH, auto-discover `council.toml`, read the artifact set,
+and follow the re-synth protocol when a gate flags the synthesis. The command and skill
+share a name (`consilium` / `consreview`), so install **one form or the other** — installing
+both registers the same name twice.
 
 ## Configure
 
