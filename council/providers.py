@@ -161,6 +161,26 @@ PROVIDERS: dict[str, Provider] = {
         auth_fail_marker="not authenticated",
         timeout=600.0,  # same as codex: slow on the multi-answer ranking bundle
     ),
+    # grok-build (reasoning) pinned at MAX effort — the strict-JUDGE grok voice (the
+    # obd-seo-site assessor panel enrols this, not `grok`). Same transport/extract/
+    # auth-preflight as `grok` above, but `-m grok-build --effort max` forces the
+    # reasoning model at top depth: the plain `grok` voice runs the fast composer
+    # default — fine for consilium ranking, too shallow for rubric grading. grok-cli
+    # Rule 8 canonical judge invocation; verified 3/3 parallel + 12s single 2026-07-08.
+    "grokbuild": Provider(
+        name="grokbuild", bin="grok", uses_prompt_file=True, family="xai",
+        argv=["grok", "-m", "grok-build", "--effort", "max",
+              "--prompt-file", "{prompt_file}", "--output-format", "json",
+              "--disable-web-search", "--no-subagents", "--no-plan", "--no-alt-screen",
+              "--deny", "MCPTool(**)", "--deny", "Bash(**)", "--deny", "Read(**)",
+              "--deny", "Write(**)", "--deny", "Edit(**)"],
+        extract=_grok_json,
+        install_hint="curl -fsSL https://x.ai/cli/install.sh | bash",
+        login_hint="grok login",
+        auth_check=["grok", "models"],
+        auth_fail_marker="not authenticated",
+        timeout=600.0,
+    ),
     # Experimental: gemini's non-interactive mode + auth vary by setup (some
     # installs need vendor-specific environment variables or a first-run consent
     # — see Google's gemini-cli docs). Set any needed env in your shell. The
