@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from . import audit as auditmod
 from . import decide as decidemod
 from . import review as reviewmod
-from .providers import Provider
+from .providers import Provider, reset_dead_cache
 
 
 @dataclass
@@ -96,6 +96,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
                         redteam_voices: list[str] | None = None,
                         timeout: float | None = None,
                         log=lambda *_: None) -> PipelineResult:
+    reset_dead_cache()
     audit_voices = list(audit_voices or [])
     redteam_voices = list(redteam_voices or [])
 
@@ -140,6 +141,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
     vocabulary, and worst-wins rules are the same engine — no fork. The phantom-file
     mechanical check is off (check_files=False): a decision has no diff, so a real
     repo file a voice names is not a phantom."""
+    reset_dead_cache()
     audit_voices = list(audit_voices or [])
     redteam_voices = list(redteam_voices or [])
 

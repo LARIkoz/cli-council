@@ -101,6 +101,8 @@ def _cli_provider(name: str, over: dict) -> Provider:
         install_hint=over.get("install_hint", ""),
         login_hint=over.get("login_hint", ""),
         fallbacks=list(over.get("fallbacks") or []),
+        auth_check=list(over["auth_check"]) if "auth_check" in over else [],
+        auth_fail_marker=str(over.get("auth_fail_marker", "")),
     )
 
 
@@ -131,6 +133,8 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
             family=str(over["family"]) if "family" in over else base.family,
             fallbacks=list(over["fallbacks"]) if "fallbacks" in over else base.fallbacks,
+            auth_check=list(over["auth_check"]) if "auth_check" in over else base.auth_check,
+            auth_fail_marker=str(over["auth_fail_marker"]) if "auth_fail_marker" in over else base.auth_fail_marker,
         )
     return providers
 

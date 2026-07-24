@@ -313,14 +313,25 @@ def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[
             tmp.unlink(missing_ok=True)
 
 
+_dead_providers: set[str] = set()
+
+
+def reset_dead_cache() -> None:
+    """Clear the per-run dead-provider cache (for testing)."""
+    _dead_providers.clear()
+
+
 def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
                   timeout: float = DEFAULT_TIMEOUT,
                   log=lambda *_: None) -> tuple[bool, str]:
     """Try `name`, then each of its fallbacks in order. First ok=True wins.
 
-    Every attempt is logged so the caller (and the user) can see the chain. The
-    family is always the PRIMARY voice's family — a fallback never changes the
-    quorum semantics. Returns (ok, text_or_error) same as invoke().
+    Providers that failed earlier in this run are cached and skipped instantly
+    on subsequent stages (the dead-provider cache). A full 5-stage council with
+    a dead primary pays the failure cost ONCE, not per-stage.
+
+    The family is always the PRIMARY voice's family — a fallback never changes
+    the quorum semantics. Returns (ok, text_or_error) same as invoke().
     """
     primary = providers.get(name)
     if primary is None:
@@ -329,6 +340,14 @@ def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
     chain = [name] + list(primary.fallbacks)
     errors = []
     for i, vname in enumerate(chain):
+        if vname in _dead_providers:
+            errors.append(f"{vname}: cached dead from earlier")
+            remaining = [c for c in chain[i+1:] if c not in _dead_providers]
+            if remaining:
+                log(f"        {vname} ✗ (cached dead) → {remaining[0]}")
+            else:
+                log(f"        {vname} ✗ (cached dead, no more fallbacks)")
+            continue
         p = providers.get(vname)
         if p is None:
             errors.append(f"{vname}: unknown provider (fallback #{i})")
@@ -340,8 +359,12 @@ def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
                 log(f"        fallback {vname} ✓ (primary {name} failed)")
             return True, out
         errors.append(out)
-        if i < len(chain) - 1:
-            log(f"        {vname} ✗ → trying fallback {chain[i+1]}")
+        _dead_providers.add(vname)
+        remaining = [c for c in chain[i+1:] if c not in _dead_providers]
+        if remaining:
+            log(f"        {vname} ✗ → trying fallback {remaining[0]}")
+        elif i < len(chain) - 1:
+            log(f"        {vname} ✗ (remaining fallbacks also cached dead)")
     return False, " → ".join(errors)
 
 
