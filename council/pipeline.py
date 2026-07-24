@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from . import audit as auditmod
 from . import decide as decidemod
 from . import review as reviewmod
-from .providers import Provider, reset_dead_cache
+from .providers import Provider, reset_dead_cache, warm_ssh_providers
 
 
 @dataclass
@@ -97,6 +97,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
                         timeout: float | None = None,
                         log=lambda *_: None) -> PipelineResult:
     reset_dead_cache()
+    warm_ssh_providers(providers)
     audit_voices = list(audit_voices or [])
     redteam_voices = list(redteam_voices or [])
 
@@ -142,6 +143,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
     mechanical check is off (check_files=False): a decision has no diff, so a real
     repo file a voice names is not a phantom."""
     reset_dead_cache()
+    warm_ssh_providers(providers)
     audit_voices = list(audit_voices or [])
     redteam_voices = list(redteam_voices or [])
 

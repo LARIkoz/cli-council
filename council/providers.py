@@ -321,6 +321,35 @@ def reset_dead_cache() -> None:
     _dead_providers.clear()
 
 
+def warm_ssh_providers(providers: dict[str, "Provider"]) -> None:
+    """Pre-establish SSH ControlMaster connections for SSH-transport fallbacks.
+
+    Called once at pipeline start. If the host already has a ControlMaster
+    socket (ControlPersist), this is a ~90ms no-op. If not, it pays the ~800ms
+    cold handshake NOW so the first fallback hop is instant. Fire-and-forget:
+    a failed warm-up is fine — the real call will fail on its own terms.
+    """
+    seen: set[str] = set()
+    for p in providers.values():
+        if p.transport == "cli" and p.bin == "ssh" and p.argv:
+            host = next((a for a in p.argv if not a.startswith("-") and a != "ssh"), None)
+            if host and host not in seen:
+                seen.add(host)
+                try:
+                    subprocess.run(
+                        ["ssh", "-O", "check", host],
+                        capture_output=True, timeout=2.0,
+                    )
+                except Exception:  # noqa: BLE001
+                    try:
+                        subprocess.run(
+                            ["ssh", "-fN", host],
+                            capture_output=True, timeout=5.0,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+
 def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
                   timeout: float = DEFAULT_TIMEOUT,
                   log=lambda *_: None) -> tuple[bool, str]:
