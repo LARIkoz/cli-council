@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from . import aggregate
-from .providers import Provider, invoke, invoke_chain, resolve_timeout
+from .providers import Provider, invoke, invoke_chain
 
 RANK_PROMPT = """\
 You are a peer-ranking judge. Several assistants answered the SAME question. Their
@@ -129,7 +129,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     log("stage 1 · first opinions")
     with ThreadPoolExecutor(max_workers=len(voices)) as pool:
         futs = {pool.submit(invoke_chain, v, providers, question,
-                            resolve_timeout(providers[v], timeout), log): v
+                            timeout, log): v
                 for v in voices}
         for fut in as_completed(futs):
             v = futs[fut]
@@ -168,7 +168,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     rankers = list(res.opinions)  # only voices that produced an answer may rank
     with ThreadPoolExecutor(max_workers=len(rankers)) as pool:
         futs = {pool.submit(invoke_chain, v, providers, rank_prompt,
-                            resolve_timeout(providers[v], timeout), log): v
+                            timeout, log): v
                 for v in rankers}
         for fut in as_completed(futs):
             v = futs[fut]
@@ -193,7 +193,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     if chair != chairman:
         log(f"    chairman '{chairman}' had no answer; using '{chair}'")
         res.chairman = chair
-    ok, out = invoke_chain(chair, providers, _chairman_prompt(res, mode), resolve_timeout(providers[chair], timeout), log)
+    ok, out = invoke_chain(chair, providers, _chairman_prompt(res, mode), timeout, log)
     if ok and out.strip():
         res.final = out
         log("    ✓")

@@ -351,16 +351,28 @@ def warm_ssh_providers(providers: dict[str, "Provider"]) -> None:
 
 
 def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
-                  timeout: float = DEFAULT_TIMEOUT,
+                  timeout_override: float | None = None,
                   log=lambda *_: None) -> tuple[bool, str]:
     """Try `name`, then each of its fallbacks in order. First ok=True wins.
+
+    `timeout_override` is the raw user/config override (None = each voice uses
+    its own configured ceiling via resolve_timeout). Passed through per-hop so
+    each fallback resolves its OWN timeout, not the primary's.
 
     Providers that failed earlier in this run are cached and skipped instantly
     on subsequent stages (the dead-provider cache). A full 5-stage council with
     a dead primary pays the failure cost ONCE, not per-stage.
 
     The family is always the PRIMARY voice's family — a fallback never changes
-    the quorum semantics. Returns (ok, text_or_error) same as invoke().
+    the quorum semantics. This means a fallback from a different family (e.g.,
+    codex falling back to a remote codex on another machine) is still counted as
+    the primary's family for decide-mode quorum. This is intentional: the config
+    author controls the chain, and restricting fallbacks to same-family would
+    make SSH-to-remote-machine fallbacks useless. The risk (faking diversity if
+    multiple primaries all fall back to the same underlying provider) is accepted
+    and mitigated by the config author's judgment.
+
+    Returns (ok, text_or_error) same as invoke().
     """
     primary = providers.get(name)
     if primary is None:
@@ -381,7 +393,7 @@ def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
         if p is None:
             errors.append(f"{vname}: unknown provider (fallback #{i})")
             continue
-        t = resolve_timeout(p, timeout if timeout != DEFAULT_TIMEOUT else None)
+        t = resolve_timeout(p, timeout_override)
         ok, out = invoke(p, prompt, t)
         if ok:
             if i > 0:

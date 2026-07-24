@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .providers import Provider, invoke, invoke_chain, resolve_timeout
+from .providers import Provider, invoke, invoke_chain
 
 
 @dataclass
@@ -39,7 +39,7 @@ def run_panel(prompt: str, voices: list[str], providers: dict[str, Provider],
         return res
     with ThreadPoolExecutor(max_workers=len(voices)) as pool:
         futs = {pool.submit(invoke_chain, v, providers, prompt,
-                            resolve_timeout(providers[v], timeout), log): v
+                            timeout, log): v
                 for v in voices}
         for fut in as_completed(futs):
             v = futs[fut]

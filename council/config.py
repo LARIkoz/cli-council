@@ -59,7 +59,7 @@ def _http_provider(name: str, over: dict) -> Provider:
         install_hint=over.get("install_hint")
         or f"token voice — get an API key for {name}, then: export {key_env}=<key>",
         login_hint=over.get("login_hint") or f"export {key_env}=<your {name} API key>",
-        fallbacks=list(over.get("fallbacks") or []),
+        fallbacks=_fallbacks_list(name, over),
     )
 
 
@@ -100,10 +100,29 @@ def _cli_provider(name: str, over: dict) -> Provider:
         family=str(over.get("family", "")),
         install_hint=over.get("install_hint", ""),
         login_hint=over.get("login_hint", ""),
-        fallbacks=list(over.get("fallbacks") or []),
+        fallbacks=_fallbacks_list(name, over),
         auth_check=list(over["auth_check"]) if "auth_check" in over else [],
         auth_fail_marker=str(over.get("auth_fail_marker", "")),
     )
+
+
+def _fallbacks_list(name: str, over: dict) -> list[str]:
+    """Validate + normalize a council.toml `fallbacks` field. Must be a list of
+    strings — a bare string `fallbacks = "codex"` would `list()`-explode into
+    per-character names (['c','o','d','e','x']), so reject it loudly."""
+    raw = over.get("fallbacks")
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(
+            f"council.toml [providers.{name}] fallbacks must be an array like "
+            f'["voice1", "voice2"], not {type(raw).__name__}: {raw!r}')
+    for i, f in enumerate(raw):
+        if not isinstance(f, str):
+            raise ValueError(
+                f"council.toml [providers.{name}] fallbacks[{i}] must be a string, "
+                f"got {type(f).__name__}: {f!r}")
+    return [str(f) for f in raw]
 
 
 def _build_providers(data: dict) -> dict[str, Provider]:
@@ -132,10 +151,16 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             argv=_argv_list(name, over) if "argv" in over else base.argv,
             timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
             family=str(over["family"]) if "family" in over else base.family,
-            fallbacks=list(over["fallbacks"]) if "fallbacks" in over else base.fallbacks,
+            fallbacks=_fallbacks_list(name, over) if "fallbacks" in over else base.fallbacks,
             auth_check=list(over["auth_check"]) if "auth_check" in over else base.auth_check,
             auth_fail_marker=str(over["auth_fail_marker"]) if "auth_fail_marker" in over else base.auth_fail_marker,
         )
+    for name, p in providers.items():
+        bad = [f for f in p.fallbacks if f not in providers]
+        if bad:
+            raise ValueError(
+                f"council.toml [providers.{name}] fallbacks references unknown "
+                f"providers {bad}; known: {sorted(providers)}")
     return providers
 
 
