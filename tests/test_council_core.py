@@ -33,8 +33,8 @@ class TestKarpathyCoreInvariants(unittest.TestCase):
                    "bob": "I make it forty-two.",
                    "carol": "Two dozen and eighteen."}
 
-        def fake_invoke(p, prompt, timeout):
-            self.captured.append((p.name, prompt))
+        def fake_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
+            self.captured.append((name, prompt))
             if "FINAL RANKING" in prompt and "Answers to rank" in prompt:   # stage 2
                 import re
                 labels = re.findall(r"### (Response [A-Z])", prompt)
@@ -42,9 +42,9 @@ class TestKarpathyCoreInvariants(unittest.TestCase):
                     f"{i}. {l}" for i, l in enumerate(labels, 1))
             if "chairman of a council" in prompt:                            # stage 3
                 return True, "SYNTHESIZED FINAL ANSWER"
-            return True, answers[p.name]                                     # stage 1
+            return True, answers[name]                                       # stage 1
 
-        self._patch = mock.patch.object(stages, "invoke", fake_invoke)
+        self._patch = mock.patch.object(stages, "invoke_chain", fake_invoke_chain)
         self._patch.start()
         self.addCleanup(self._patch.stop)
         self.res = stages.run_council("What is X?", self.voices, "alice", self.providers)

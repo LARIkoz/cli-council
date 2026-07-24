@@ -20,11 +20,11 @@ class TestPanelPrimitive(unittest.TestCase):
     def test_every_voice_asked_in_parallel_and_independent(self):
         seen = []
 
-        def fake_invoke(p, prompt, timeout):
-            seen.append((p.name, prompt))
-            return True, f"CLEAN from {p.name}"
+        def fake_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
+            seen.append((name, prompt))
+            return True, f"CLEAN from {name}"
 
-        with mock.patch("council.panel.invoke", fake_invoke):
+        with mock.patch("council.panel.invoke_chain", fake_invoke_chain):
             res = panel.run_panel("PROMPT", ["a", "b", "c"],
                                   {v: _dummy(v) for v in "abc"},
                                   parse=lambda t: t.split()[0])
@@ -33,12 +33,12 @@ class TestPanelPrimitive(unittest.TestCase):
         self.assertEqual({pr for _, pr in seen}, {"PROMPT"})
 
     def test_errors_recorded_loudly(self):
-        def fake_invoke(p, prompt, timeout):
-            if p.name == "b":
+        def fake_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
+            if name == "b":
                 return False, "b: timeout after 90s"
             return True, "CLEAN"
 
-        with mock.patch("council.panel.invoke", fake_invoke):
+        with mock.patch("council.panel.invoke_chain", fake_invoke_chain):
             res = panel.run_panel("P", ["a", "b"], {v: _dummy(v) for v in "ab"},
                                   parse=lambda t: "CLEAN")
         self.assertIn("b", res.errors)
@@ -140,12 +140,12 @@ class TestVerdictParse(unittest.TestCase):
 
 
 def _panel_invoke(audit_map, redteam_map):
-    """Fake invoke routing by prompt kind + voice name."""
-    def fake(p, prompt, timeout):
+    """Fake invoke_chain routing by prompt kind + voice name."""
+    def fake(name, providers, prompt, timeout=300, log=lambda *_: None):
         table = audit_map if "synthesis auditor" in prompt else redteam_map
-        out = table.get(p.name)
+        out = table.get(name)
         if out is None:
-            return False, f"{p.name}: no route"
+            return False, f"{name}: no route"
         return True, out
     return fake
 
@@ -157,7 +157,7 @@ class TestRunAuditPanels(unittest.TestCase):
     def test_clean_pipeline_all_voices(self):
         fake = _panel_invoke({"a": "CLEAN\nok", "b": "CLEAN\nok"},
                              {"a": "HOLDS\nstands", "b": "HOLDS\nstands"})
-        with mock.patch("council.panel.invoke", fake):
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("FIX\n## BLOCKER\nx", {"a": "rev"}, "subject",
                                   audit_voices=["a", "b"], redteam_voices=["a", "b"],
                                   providers=self.providers)
@@ -171,7 +171,7 @@ class TestRunAuditPanels(unittest.TestCase):
         # 2 CLEAN + 1 INVALID → INVALID (worst-wins: one credible catch can't be outvoted)
         fake = _panel_invoke({"a": "CLEAN\n", "b": "CLEAN\n", "c": "INVALID\nhallucinated F"},
                              {"a": "HOLDS\n"})
-        with mock.patch("council.panel.invoke", fake):
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("S", {"a": "r"}, "subj",
                                   audit_voices=["a", "b", "c"], redteam_voices=["a"],
                                   providers=self.providers)
@@ -182,7 +182,7 @@ class TestRunAuditPanels(unittest.TestCase):
     def test_weak_redteam_degrades_contract_parity(self):
         # orchestration contract: "REDTEAM says WEAK or REFUTED → do not present as final"
         fake = _panel_invoke({"a": "CLEAN\n"}, {"a": "WEAK\none refuted"})
-        with mock.patch("council.panel.invoke", fake):
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("S", {"a": "r"}, "subj",
                                   audit_voices=["a"], redteam_voices=["a"],
                                   providers=self.providers)
@@ -192,7 +192,7 @@ class TestRunAuditPanels(unittest.TestCase):
 
     def test_redteam_skipped_can_still_be_clean(self):
         fake = _panel_invoke({"a": "CLEAN\n"}, {})
-        with mock.patch("council.panel.invoke", fake):
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("S", {"a": "r"}, "subj",
                                   audit_voices=["a"], redteam_voices=[],
                                   providers=self.providers)
@@ -201,7 +201,7 @@ class TestRunAuditPanels(unittest.TestCase):
 
     def test_audit_skipped_never_clean(self):
         fake = _panel_invoke({}, {"a": "HOLDS\n"})
-        with mock.patch("council.panel.invoke", fake):
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("S", {"a": "r"}, "subj",
                                   audit_voices=[], redteam_voices=["a"],
                                   providers=self.providers)
@@ -209,9 +209,9 @@ class TestRunAuditPanels(unittest.TestCase):
         self.assertFalse(res.pipeline_clean)
 
     def test_all_auditors_dead_is_unavailable_degraded(self):
-        def fake(p, prompt, timeout):
-            return False, f"{p.name}: connection failed"
-        with mock.patch("council.panel.invoke", fake):
+        def fake(name, providers, prompt, timeout=300, log=lambda *_: None):
+            return False, f"{name}: connection failed"
+        with mock.patch("council.panel.invoke_chain", fake):
             res = audit.run_audit("S", {"a": "r"}, "subj",
                                   audit_voices=["a", "b"], redteam_voices=[],
                                   providers=self.providers)
@@ -224,7 +224,7 @@ class TestDegradedKind(unittest.TestCase):
     couldn't run). Conflating them is what causes alarm fatigue."""
 
     def _run(self, amap, rmap, av, rv):
-        with mock.patch("council.panel.invoke", _panel_invoke(amap, rmap)):
+        with mock.patch("council.panel.invoke_chain", _panel_invoke(amap, rmap)):
             return audit.run_audit("S", {"a": "r"}, "subj", audit_voices=av,
                                    redteam_voices=rv, providers={v: _dummy(v) for v in ("a", "b")})
 
@@ -275,7 +275,7 @@ class TestPipelineComposition(unittest.TestCase):
         self.chairman_fails = False       # flip on to simulate a chairman/synth timeout
         self.dead_voices = set()          # voices that fail at stage 1 (collapse the council)
 
-        def fake_stage_invoke(p, prompt, timeout):
+        def fake_stage_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "Reviews to rank" in prompt:
                 import re
                 labels = re.findall(r"### (Response [A-Z])", prompt)
@@ -285,17 +285,17 @@ class TestPipelineComposition(unittest.TestCase):
                 if self.chairman_fails:
                     return False, "timeout after 600s"
                 return True, "FIX\n\n## BLOCKER\nf.py:1 — bad"
-            if p.name in self.dead_voices:               # stage-1 death
-                return False, f"{p.name}: dead"
-            return True, f"SHIP-WITH-EDITS\nreview by {p.name}"
+            if name in self.dead_voices:               # stage-1 death
+                return False, f"{name}: dead"
+            return True, f"SHIP-WITH-EDITS\nreview by {name}"
 
-        def fake_panel_invoke(p, prompt, timeout):
+        def fake_panel_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "synthesis auditor" in prompt:
                 return True, "CLEAN\nok"
             return True, "HOLDS\nstands"
 
-        self._p1 = mock.patch("council.stages.invoke", fake_stage_invoke)
-        self._p2 = mock.patch("council.panel.invoke", fake_panel_invoke)
+        self._p1 = mock.patch("council.stages.invoke_chain", fake_stage_invoke_chain)
+        self._p2 = mock.patch("council.panel.invoke_chain", fake_panel_invoke_chain)
         self._p1.start(); self._p2.start()
         self.addCleanup(self._p1.stop)
         self.addCleanup(self._p2.stop)

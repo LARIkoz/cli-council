@@ -101,7 +101,7 @@ class TestRunReview(unittest.TestCase):
     def setUp(self):
         self.seen = []
 
-        def fake_invoke(p, prompt, timeout):
+        def fake_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             self.seen.append(prompt)
             if "Reviews to rank" in prompt:                      # stage 2 (review ranking)
                 labels = re.findall(r"### (Response [A-Z])", prompt)
@@ -110,9 +110,9 @@ class TestRunReview(unittest.TestCase):
                 return True, f"{bullets}\nFINAL RANKING:\n{ranking}"
             if "lead reviewer" in prompt:                        # stage 3 (chairman)
                 return True, "FIX\n\n## BLOCKER\nfoo.py:2 — divide by zero, because n can be 0.\n"
-            return True, f"SHIP-WITH-EDITS\nreview from {p.name}"  # stage 1 (opinion)
+            return True, f"SHIP-WITH-EDITS\nreview from {name}"  # stage 1 (opinion)
 
-        self._patch = mock.patch.object(stages, "invoke", fake_invoke)
+        self._patch = mock.patch.object(stages, "invoke_chain", fake_invoke_chain)
         self._patch.start()
         self.addCleanup(self._patch.stop)
         self.providers = {"a": _dummy("a"), "b": _dummy("b")}

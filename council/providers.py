@@ -110,6 +110,10 @@ class Provider:
     # family (family_of falls back to the name). Set on the built-ins below; a
     # council.toml voice declares its own `family = "…"`.
     family: str = ""
+    # Fallback chain: ordered list of provider NAMES to try if this voice fails.
+    # Each fallback is tried in order; the first success wins. The chain stops on
+    # the first ok=True. Set via council.toml `fallbacks = ["name1", "name2"]`.
+    fallbacks: list = field(default_factory=list)
 
 
 # The official subscription CLIs. Claude is the native default (Claude Code is
@@ -161,15 +165,16 @@ PROVIDERS: dict[str, Provider] = {
         auth_fail_marker="not authenticated",
         timeout=600.0,  # same as codex: slow on the multi-answer ranking bundle
     ),
-    # grok-build (reasoning) pinned at MAX effort — the strict-JUDGE grok voice (the
+    # grok-4.5 (reasoning) pinned at MAX effort — the strict-JUDGE grok voice (the
     # obd-seo-site assessor panel enrols this, not `grok`). Same transport/extract/
-    # auth-preflight as `grok` above, but `-m grok-build --effort max` forces the
+    # auth-preflight as `grok` above, but `-m grok-4.5 --effort max` forces the
     # reasoning model at top depth: the plain `grok` voice runs the fast composer
     # default — fine for consilium ranking, too shallow for rubric grading. grok-cli
     # Rule 8 canonical judge invocation; verified 3/3 parallel + 12s single 2026-07-08.
+    # Model renamed grok-build → grok-4.5 in CLI v0.2.93 (2026-07-09).
     "grokbuild": Provider(
         name="grokbuild", bin="grok", uses_prompt_file=True, family="xai",
-        argv=["grok", "-m", "grok-build", "--effort", "max",
+        argv=["grok", "-m", "grok-4.5", "--effort", "max",
               "--prompt-file", "{prompt_file}", "--output-format", "json",
               "--disable-web-search", "--no-subagents", "--no-plan", "--no-alt-screen",
               "--deny", "MCPTool(**)", "--deny", "Bash(**)", "--deny", "Read(**)",
@@ -306,6 +311,38 @@ def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[
     finally:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
+
+
+def invoke_chain(name: str, providers: dict[str, "Provider"], prompt: str,
+                  timeout: float = DEFAULT_TIMEOUT,
+                  log=lambda *_: None) -> tuple[bool, str]:
+    """Try `name`, then each of its fallbacks in order. First ok=True wins.
+
+    Every attempt is logged so the caller (and the user) can see the chain. The
+    family is always the PRIMARY voice's family — a fallback never changes the
+    quorum semantics. Returns (ok, text_or_error) same as invoke().
+    """
+    primary = providers.get(name)
+    if primary is None:
+        return False, f"{name}: unknown provider"
+
+    chain = [name] + list(primary.fallbacks)
+    errors = []
+    for i, vname in enumerate(chain):
+        p = providers.get(vname)
+        if p is None:
+            errors.append(f"{vname}: unknown provider (fallback #{i})")
+            continue
+        t = resolve_timeout(p, timeout if timeout != DEFAULT_TIMEOUT else None)
+        ok, out = invoke(p, prompt, t)
+        if ok:
+            if i > 0:
+                log(f"        fallback {vname} ✓ (primary {name} failed)")
+            return True, out
+        errors.append(out)
+        if i < len(chain) - 1:
+            log(f"        {vname} ✗ → trying fallback {chain[i+1]}")
+    return False, " → ".join(errors)
 
 
 def _base_env() -> dict:

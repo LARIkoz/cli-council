@@ -88,7 +88,7 @@ class TestRunDecide(unittest.TestCase):
     """Full decide council over a faked, family-diverse roster."""
 
     def setUp(self):
-        def fake_invoke(p, prompt, timeout):
+        def fake_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "Recommendations to rank" in prompt:                  # stage 2
                 labels = re.findall(r"### (Response [A-Z])", prompt)
                 bullets = "\n".join(f"- {l}: grounded" for l in labels)
@@ -97,9 +97,9 @@ class TestRunDecide(unittest.TestCase):
             if "chair of a decision council" in prompt:              # stage 3
                 return True, ("Adopt Postgres.\n\n## IMPORTANT\n"
                               "plan the migration — because the write path scales.\n")
-            return True, f"Recommend Postgres\nreasoning from {p.name}"  # stage 1
+            return True, f"Recommend Postgres\nreasoning from {name}"  # stage 1
 
-        self._patch = mock.patch.object(stages, "invoke", fake_invoke)
+        self._patch = mock.patch.object(stages, "invoke_chain", fake_invoke_chain)
         self._patch.start()
         self.addCleanup(self._patch.stop)
         self.providers = {"opus": _v("opus", "anthropic"),
@@ -141,7 +141,7 @@ class TestDecidePipeline(unittest.TestCase):
         self.audit_garbles = set()        # these return LIVE but unparseable output (ERROR)
         self.rankers_fail = False         # flip on to make ALL peer rankings unparseable
 
-        def fake_stage_invoke(p, prompt, timeout):
+        def fake_stage_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "Recommendations to rank" in prompt:
                 if self.rankers_fail:
                     return True, "I have thoughts but no FINAL RANKING block."   # unparseable
@@ -154,20 +154,20 @@ class TestDecidePipeline(unittest.TestCase):
                 if self.chairman_empty:
                     return True, "   "
                 return True, "Adopt Postgres.\n\n## IMPORTANT\nmigrate — scales better."
-            return True, f"Recommend Postgres\nby {p.name}"
+            return True, f"Recommend Postgres\nby {name}"
 
         self.audit_verdict = "CLEAN"
 
-        def fake_panel_invoke(p, prompt, timeout):
+        def fake_panel_invoke_chain(name, providers, prompt, timeout=300, log=lambda *_: None):
             self.audit_seen.append(prompt)
-            if self.audit_dies or p.name in self.audit_dead_voices:
-                return False, f"{p.name}: auditor process died"
-            if p.name in self.audit_garbles:
+            if self.audit_dies or name in self.audit_dead_voices:
+                return False, f"{name}: auditor process died"
+            if name in self.audit_garbles:
                 return True, "Some rambling analysis with no leading verdict word at all."
             return True, f"{self.audit_verdict}\nchecked"
 
-        self._p1 = mock.patch("council.stages.invoke", fake_stage_invoke)
-        self._p2 = mock.patch("council.panel.invoke", fake_panel_invoke)
+        self._p1 = mock.patch("council.stages.invoke_chain", fake_stage_invoke_chain)
+        self._p2 = mock.patch("council.panel.invoke_chain", fake_panel_invoke_chain)
         self._p1.start(); self._p2.start()
         self.addCleanup(self._p1.stop)
         self.addCleanup(self._p2.stop)
@@ -387,16 +387,16 @@ class TestEmptyOutputGuard(unittest.TestCase):
         provs = {"opus": _v("opus", "anthropic"), "codex": _v("codex", "openai"),
                  "agy": _v("agy", "google"), "grok": _v("grok", "xai")}
 
-        def fake(p, prompt, timeout):
+        def fake(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "Recommendations to rank" in prompt:
                 labels = re.findall(r"### (Response [A-Z])", prompt)
                 return True, "FINAL RANKING:\n" + "\n".join(
                     f"{i}. {l}" for i, l in enumerate(labels, 1))
             if "chair of a decision council" in prompt:
                 return True, "Do it.\n\n## IMPORTANT\nx"
-            return (True, "  ") if p.name == "agy" else (True, f"answer from {p.name}")
+            return (True, "  ") if name == "agy" else (True, f"answer from {name}")
 
-        with mock.patch.object(stages, "invoke", fake):
+        with mock.patch.object(stages, "invoke_chain", fake):
             subject, target = decide.build_decide_prompt("go?")
             res = decide.run_decide(subject, target, voices=["opus", "codex", "agy", "grok"],
                                     chairman="opus", providers=provs)
@@ -417,15 +417,15 @@ class TestRankingFallback(unittest.TestCase):
                  "agy": _v("agy", "google")}
         seen = {}
 
-        def fake(p, prompt, timeout):
+        def fake(name, providers, prompt, timeout=300, log=lambda *_: None):
             if "Recommendations to rank" in prompt:
                 return True, "I refuse to give a ranking block."     # unparseable → rank_error
             if "chair of a decision council" in prompt:
                 seen["chair"] = prompt
                 return True, "Do it.\n\n## IMPORTANT\nx"
-            return True, f"answer from {p.name}"
+            return True, f"answer from {name}"
 
-        with mock.patch.object(stages, "invoke", fake):
+        with mock.patch.object(stages, "invoke_chain", fake):
             subject, target = decide.build_decide_prompt("go?")
             res = decide.run_decide(subject, target, voices=["opus", "codex", "agy"],
                                     chairman="opus", providers=provs)

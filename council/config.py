@@ -59,6 +59,7 @@ def _http_provider(name: str, over: dict) -> Provider:
         install_hint=over.get("install_hint")
         or f"token voice — get an API key for {name}, then: export {key_env}=<key>",
         login_hint=over.get("login_hint") or f"export {key_env}=<your {name} API key>",
+        fallbacks=list(over.get("fallbacks") or []),
     )
 
 
@@ -99,6 +100,7 @@ def _cli_provider(name: str, over: dict) -> Provider:
         family=str(over.get("family", "")),
         install_hint=over.get("install_hint", ""),
         login_hint=over.get("login_hint", ""),
+        fallbacks=list(over.get("fallbacks") or []),
     )
 
 
@@ -128,6 +130,7 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             argv=_argv_list(name, over) if "argv" in over else base.argv,
             timeout=float(over["timeout"]) if "timeout" in over else base.timeout,
             family=str(over["family"]) if "family" in over else base.family,
+            fallbacks=list(over["fallbacks"]) if "fallbacks" in over else base.fallbacks,
         )
     return providers
 

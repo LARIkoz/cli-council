@@ -16,7 +16,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 from . import aggregate
-from .providers import Provider, invoke, resolve_timeout
+from .providers import Provider, invoke, invoke_chain, resolve_timeout
 
 RANK_PROMPT = """\
 You are a peer-ranking judge. Several assistants answered the SAME question. Their
@@ -123,10 +123,13 @@ def run_council(question: str, voices: list[str], chairman: str,
     res = CouncilResult(question=question, chairman=chairman)
 
     # Stage 1 — first opinions (parallel: voices are I/O-bound, not CPU-bound).
+    # Uses invoke_chain: if a voice has fallbacks configured, they are tried in
+    # order before the voice is marked failed. The fallback chain runs INSIDE the
+    # thread — no extra parallelism, just sequential retries on the same slot.
     log("stage 1 · first opinions")
     with ThreadPoolExecutor(max_workers=len(voices)) as pool:
-        futs = {pool.submit(invoke, providers[v], question,
-                            resolve_timeout(providers[v], timeout)): v
+        futs = {pool.submit(invoke_chain, v, providers, question,
+                            resolve_timeout(providers[v], timeout), log): v
                 for v in voices}
         for fut in as_completed(futs):
             v = futs[fut]
@@ -164,8 +167,8 @@ def run_council(question: str, voices: list[str], chairman: str,
     rank_prompt = mode.rank_prompt.format(subject=question, blocks=blocks)
     rankers = list(res.opinions)  # only voices that produced an answer may rank
     with ThreadPoolExecutor(max_workers=len(rankers)) as pool:
-        futs = {pool.submit(invoke, providers[v], rank_prompt,
-                            resolve_timeout(providers[v], timeout)): v
+        futs = {pool.submit(invoke_chain, v, providers, rank_prompt,
+                            resolve_timeout(providers[v], timeout), log): v
                 for v in rankers}
         for fut in as_completed(futs):
             v = futs[fut]
@@ -190,7 +193,7 @@ def run_council(question: str, voices: list[str], chairman: str,
     if chair != chairman:
         log(f"    chairman '{chairman}' had no answer; using '{chair}'")
         res.chairman = chair
-    ok, out = invoke(providers[chair], _chairman_prompt(res, mode), resolve_timeout(providers[chair], timeout))
+    ok, out = invoke_chain(chair, providers, _chairman_prompt(res, mode), resolve_timeout(providers[chair], timeout), log)
     if ok and out.strip():
         res.final = out
         log("    ✓")
