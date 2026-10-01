@@ -11,8 +11,11 @@ shape in one function:
     stage 5    gate — pure rules (audit.py), no model can soften it
 
 Status vocabulary:
-    clean       audit CLEAN and redteam HOLDS/absent — safe to present as final
-    degraded    verification ran and found problems — do NOT present unattended
+    clean       every selected voice answered, audit CLEAN and redteam HOLDS/absent —
+                safe to present as final
+    degraded    verification found problems, or the council itself fell short (a
+                selected voice missing, synthesis failed, one-voice collapse) — do NOT
+                present unattended
     unverified  no verification configured — a bare council review
 """
 from __future__ import annotations
@@ -34,6 +37,28 @@ class PipelineResult:
     degraded_reasons: list = field(default_factory=list)
 
 
+# Long fallback-chain errors ("a: … → b: … → c: …") are cut to this many characters in
+# a degraded reason; the full text stays in pipeline-status.json `opinion_errors`.
+MISSING_VOICE_ERROR_CHARS = 200
+
+
+def _missing_voices(rev) -> list[str]:
+    """The required-voices check: every voice selected for the run is required, so each
+    one that ended stage 1 in `opinion_errors` (after its whole fallback chain) is a
+    missing voice. A review that lost a voice is a different review from the one that was
+    asked for — the remaining voices may agree with each other and read CLEAN — so it can
+    never be clean or a benign 'unverified'. The voice is reported missing, never replaced
+    (owner rule 2026-10-01: four outside voices on every review and council; a voice that
+    cannot run after both routes is reported as missing). Sorted for a stable report."""
+    reasons = []
+    for voice in sorted(rev.council.opinion_errors):
+        err = " ".join(str(rev.council.opinion_errors[voice]).split())
+        if len(err) > MISSING_VOICE_ERROR_CHARS:
+            err = err[:MISSING_VOICE_ERROR_CHARS - 3] + "..."
+        reasons.append(f"required voice {voice} missing ({err}) [infra]")
+    return reasons
+
+
 def _council_infra(rev) -> list[str]:
     """Council-level infra signals that must degrade a run regardless of the audit
     verdict — a verifier reading CLEAN cannot launder them:
@@ -42,6 +67,8 @@ def _council_infra(rev) -> list[str]:
     - a council that collapsed to ONE voice: no peer ranking or cross-checked synthesis
       happened, and the audit would compare the lone answer to itself → a hollow CLEAN.
     (decide can't reach the 1-voice case — the ≥3-family quorum aborts first.)
+    - a selected voice that never answered (see _missing_voices): the audit only checks
+      the synthesis against the voices that DID answer, so it cannot see the gap.
 
     NOT here (deliberate): a total peer-ranking failure. Ranking is advisory (spec NFR4,
     "signal-only, never gates"); the chairman has a supported "weigh on merits" fallback,
@@ -54,13 +81,14 @@ def _council_infra(rev) -> list[str]:
     if len(rev.council.opinions) <= 1:
         reasons.append(f"council ran with only {len(rev.council.opinions)} voice — no peer "
                        f"review or cross-checked synthesis [infra]")
+    reasons += _missing_voices(rev)
     return reasons
 
 
 def _unverified(rev) -> PipelineResult:
     """No verification configured → 'unverified'. But a council-level infra failure
-    (synthesis failed, or the council collapsed to one voice) is never a benign
-    'unverified' — surface it as degraded [infra]."""
+    (synthesis failed, the council collapsed to one voice, or a selected voice is
+    missing) is never a benign 'unverified' — surface it as degraded [infra]."""
     infra = _council_infra(rev)
     if infra:
         return PipelineResult(review=rev, status="degraded", degraded_kind="infra",

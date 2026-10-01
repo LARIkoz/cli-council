@@ -163,8 +163,10 @@ a **worst-wins rule**, not by a chairman: any single `INVALID` makes the audit
 `INVALID`; any `REFUTED` makes the redteam `REFUTED`. One credible catch cannot
 be outvoted, out-ranked, or synthesized away — and a rule, unlike an LLM, cannot
 be talked into softening. The **gate** is then pure rules: the pipeline is
-`clean` only when audit is `CLEAN` and redteam `HOLDS` (or wasn't run); anything
-else is `degraded` with reasons listed; no panels configured = `unverified`.
+`clean` only when every selected voice answered, audit is `CLEAN` and redteam
+`HOLDS` (or wasn't run); anything else is `degraded` with reasons listed (a voice
+that never answered, even after its fallbacks, reads `required voice <v> missing`);
+no panels configured = `unverified`, unless a voice is missing, which is `degraded`.
 
 <p align="center">
   <img src="docs/council-vs-panel.svg" alt="Two primitives — council (synthesis) vs panel (rule-aggregated gate)" width="920">
