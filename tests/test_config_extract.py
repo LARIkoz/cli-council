@@ -2,7 +2,9 @@
 place of a built-in's JSON transport (grok-p in place of `grok --output-format json`)
 must be read with the plain extractor, or an answer that is itself a JSON object is
 taken for the transport and blanked or truncated. Exercised through the real invoke()
-with only subprocess.run faked — offline, no CLIs."""
+with subprocess.run faked (and is_installed forced true) — offline, no CLIs. The fake
+also checks prompt delivery, so a config that leaves a literal {prompt_file} in argv
+cannot pass."""
 import subprocess
 import sys
 import tempfile
@@ -23,15 +25,31 @@ TEXT_KEY_ANSWER = '{"text": "SHIP", "findings": ["f.py:1 bug"]}'
 
 class TestExtractOverride(unittest.TestCase):
     def _load(self, body):
-        d = tempfile.mkdtemp()
-        p = Path(d) / "council.toml"
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        p = Path(d.name) / "council.toml"
         p.write_text(textwrap.dedent(body))
         return config.load(str(p))
 
     def _invoke(self, provider, stdout):
-        done = subprocess.CompletedProcess(args=["x"], returncode=0, stdout=stdout, stderr="")
+        """Run the real invoke() with a fake subprocess.run that returns `stdout` and
+        records how the prompt arrived: the --prompt-file contents read during the call,
+        or stdin."""
+        self.delivered = []
+
+        def fake_run(argv, input=None, **kw):
+            self.assertFalse(any("{prompt_file}" in a or "{prompt}" in a for a in argv),
+                             f"unfilled placeholder in argv: {argv}")
+            flag = next((f for f in ("--prompt-file", "--file") if f in argv), None)
+            if flag:                       # grok takes --prompt-file, the grok-p wrapper --file
+                path = argv[argv.index(flag) + 1]
+                self.delivered.append(("file", Path(path).read_text()))
+            else:
+                self.delivered.append(("stdin", input))
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+
         with mock.patch.object(PV, "is_installed", return_value=True), \
-             mock.patch.object(PV.subprocess, "run", return_value=done):
+             mock.patch.object(PV.subprocess, "run", side_effect=fake_run):
             return PV.invoke(provider, "PROMPT", timeout=5)
 
     def test_builtin_grok_keeps_json_extractor_by_default(self):
@@ -56,6 +74,7 @@ class TestExtractOverride(unittest.TestCase):
         grok = cfg.providers["grok"]
         self.assertIs(grok.extract, PV._plain)
         self.assertEqual(self._invoke(grok, JSON_ANSWER + "\n"), (True, JSON_ANSWER))
+        self.assertEqual(self.delivered, [("file", "PROMPT")])   # the built-in's prompt-file mode
         self.assertEqual(self._invoke(grok, TEXT_KEY_ANSWER), (True, TEXT_KEY_ANSWER))
         # the other override fields still land
         self.assertEqual(grok.bin, "grok-p")
@@ -84,11 +103,13 @@ class TestExtractOverride(unittest.TestCase):
             type = "cli"
             bin = "grok"
             argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]
+            uses_prompt_file = true
             extract = "grok_json"
         """)
         g2 = cfg.providers["g2"]
         self.assertIs(g2.extract, PV._grok_json)
         self.assertEqual(self._invoke(g2, '{"text": "hello"}'), (True, "hello"))
+        self.assertEqual(self.delivered, [("file", "PROMPT")])
 
     def test_new_cli_voice_defaults_to_plain(self):
         cfg = self._load("""
@@ -100,6 +121,8 @@ class TestExtractOverride(unittest.TestCase):
             argv = ["v"]
         """)
         self.assertIs(cfg.providers["v"].extract, PV._plain)
+        self.assertEqual(self._invoke(cfg.providers["v"], JSON_ANSWER), (True, JSON_ANSWER))
+        self.assertEqual(self.delivered, [("stdin", "PROMPT")])
 
     def test_unknown_or_non_string_extract_fails_loudly(self):
         for bad in ('"xml"', '["plain"]', "1"):
