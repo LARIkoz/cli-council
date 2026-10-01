@@ -228,6 +228,12 @@ def voice_main(argv: list[str]) -> int:
                  f"known: {', '.join(sorted(cfg.providers))}")
     if d.exists() and any(p.name != "prompt.md" for p in d.iterdir()):
         ap.error(f"{d} already holds a job; use a new --out-dir")
+    # Callers write prompt.md into the conventional jobs root BEFORE this command
+    # creates the job dir, so the root itself must be private, not just each job.
+    root = Path.home() / ".cache" / "council-voice"
+    if root in d.parents:
+        root.mkdir(parents=True, exist_ok=True)
+        os.chmod(root, 0o700)
     d.mkdir(parents=True, exist_ok=True)
     os.chmod(d, 0o700)  # prompts carry private code
     _write_prompt(ap, args, d)
