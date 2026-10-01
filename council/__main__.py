@@ -1,7 +1,8 @@
 """`council "question"` — ask the council · `council review [ref]` — review a diff
-· `council decide "question"` — a verified decision (recommendation + audit + gate).
+· `council decide "question"` — a verified decision (recommendation + audit + gate)
+· `council voice <name>` / `council wait <dir>` / `council roster` — one voice, no council.
 
-`review`, `decide` (and an explicit `ask`) are subcommands; anything else is
+`review`, `decide`, `voice`, `wait`, `roster` (and an explicit `ask`) are subcommands; anything else is
 treated as a question, so `council "…"` keeps working exactly as before.
 """
 from __future__ import annotations
@@ -27,6 +28,10 @@ def main(argv: list[str] | None = None) -> int:
         return _review_main(argv[1:])
     if argv and argv[0] == "decide":
         return _decide_main(argv[1:])
+    if argv and argv[0] in ("voice", "wait", "roster"):
+        from . import voice
+        return {"voice": voice.voice_main, "wait": voice.wait_main,
+                "roster": voice.roster_main}[argv[0]](argv[1:])
     if argv and argv[0] == "ask":
         argv = argv[1:]
     return _ask_main(argv)
