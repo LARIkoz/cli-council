@@ -153,6 +153,39 @@ class TestDetachAndWait(_Base):
         self.assertIn("failed:job_died", text)
 
 
+class TestRound2(_Base):
+    def test_detached_worker_gets_an_absolute_config_path(self):
+        import os
+        out = self.tmp / "job"
+        here = os.getcwd()
+        os.chdir(self.tmp)
+        try:
+            rc, _ = self.run_cli("voice", "echo", "--prompt-file", str(self.prompt),
+                                 "--out-dir", str(out), "--config", "council.toml", "--detach")
+        finally:
+            os.chdir(here)
+        self.assertEqual(rc, 0)
+        rc, text = self.run_cli("wait", str(out), "--max", "30")
+        self.assertEqual(rc, V.EXIT_ALIVE, text)
+        self.assertTrue(Path(V.read_status(out)["config"]).is_absolute())
+
+    def test_existing_prompt_wins_over_an_empty_non_terminal_stdin(self):
+        out = self.tmp / "job"
+        out.mkdir()
+        (out / "prompt.md").write_text("from the job dir")
+        rc, text = self.run_cli("voice", "echo", "--out-dir", str(out), "--config", str(self.cfg))
+        self.assertEqual(rc, V.EXIT_ALIVE, text)
+        self.assertIn("from the job dir [echoed]", text)
+
+    def test_alive_without_answer_is_a_failure(self):
+        out = self.tmp / "job"
+        out.mkdir()
+        V._update_status(out, voice="echo", status="alive", started=time.time(), pid=1)
+        rc, text = V.wait(out, 1)
+        self.assertEqual(rc, V.EXIT_FAILED)
+        self.assertIn("answer.md is missing", text)
+
+
 class TestRoster(_Base):
     def test_roster_prints_enrolled_voices(self):
         rc, text = self.run_cli("roster", "--config", str(self.cfg))

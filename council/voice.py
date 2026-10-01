@@ -166,7 +166,8 @@ def wait(d: Path, max_seconds: float, poll: float = 2.0) -> tuple[int, str]:
     while True:
         st = read_status(d)
         if st.get("status") in ("alive", "failed"):
-            return (EXIT_ALIVE if st["status"] == "alive" else EXIT_FAILED), render_final(d, st)
+            ok = st["status"] == "alive" and (d / "answer.md").exists()
+            return (EXIT_ALIVE if ok else EXIT_FAILED), render_final(d, st)
         # A job whose process vanished without a final status would otherwise be
         # waited on forever. Mark it dead only while it is STILL "running" (under the
         # lock), so a worker that finished between our read and now keeps its result.
@@ -185,17 +186,18 @@ def wait(d: Path, max_seconds: float, poll: float = 2.0) -> tuple[int, str]:
 
 
 def _write_prompt(ap, args, d: Path) -> None:
+    # Precedence: --prompt-file, then a prompt.md already in the job dir, then stdin.
+    # stdin is read only when nothing else names a prompt: a harness keeps a
+    # non-terminal stdin open with no data, and reading it would block or misfire.
     target = d / "prompt.md"
     if args.prompt_file:
         src = Path(args.prompt_file).expanduser()
         if src.resolve() != target.resolve():
             target.write_text(src.read_text())
-    elif not sys.stdin.isatty():
-        if target.exists():
-            ap.error(f"{target} already exists and a prompt was piped on stdin; pass one of them")
-        target.write_text(sys.stdin.read())
     elif not target.exists():
-        ap.error("no prompt: pass --prompt-file or pipe it on stdin")
+        if sys.stdin.isatty():
+            ap.error("no prompt: pass --prompt-file, put prompt.md in --out-dir, or pipe it on stdin")
+        target.write_text(sys.stdin.read())
     os.chmod(target, 0o600)
     if not target.read_text().strip():
         ap.error("the prompt is empty")
@@ -238,7 +240,9 @@ def voice_main(argv: list[str]) -> int:
     os.chmod(d, 0o700)  # prompts carry private code
     _write_prompt(ap, args, d)
     # The worker must read the SAME config the launcher validated, whatever its cwd.
-    cfg_path = cfg.source if Path(cfg.source).is_file() else args.config
+    # Absolute: the detached worker runs with the job dir as its cwd.
+    src = cfg.source if Path(cfg.source).is_file() else args.config
+    cfg_path = str(Path(src).expanduser().resolve()) if src else None
 
     if not args.detach:
         rc = run_job(args.name, d, cfg_path, args.timeout)
@@ -253,8 +257,9 @@ def voice_main(argv: list[str]) -> int:
     if args.timeout:
         cmd += ["--timeout", str(args.timeout)]
     pkg_root = str(Path(__file__).resolve().parent.parent)
-    extra = os.environ.get("PYTHONPATH")
-    env = {**os.environ, "PYTHONPATH": pkg_root + (os.pathsep + extra if extra else "")}
+    # The package root only: an inherited PYTHONPATH entry (or a sitecustomize.py on
+    # it) must not run inside a worker that holds the private prompt.
+    env = {**os.environ, "PYTHONPATH": pkg_root}
     with open(d / "run.log", "w") as log:
         proc = subprocess.Popen(cmd, cwd=str(d), stdin=subprocess.DEVNULL, stdout=log, stderr=log,
                                 start_new_session=True, env=env)
