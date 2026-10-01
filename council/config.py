@@ -10,9 +10,29 @@ try:
 except ModuleNotFoundError:  # pragma: no cover
     tomllib = None
 
-from .providers import PROVIDERS, Provider
+from .providers import PROVIDERS, Provider, _grok_json, _plain
 
 DEFAULT_CONFIG_NAME = "council.toml"
+
+# How a CLI voice's stdout becomes its answer, selectable per voice with `extract = "…"`.
+# A wrapper that prints plain text in place of a built-in's JSON transport (grok-p in
+# place of `grok --output-format json`) must say "plain": the built-in grok extractor
+# would read an answer that is itself a JSON object as the transport and blank or
+# truncate it.
+EXTRACTORS = {"plain": _plain, "grok_json": _grok_json}
+
+
+def _extract_fn(name: str, over: dict, default):
+    """Validate + resolve a council.toml `extract` name; absent → `default`. An unknown
+    name fails loudly at load, not as a silently mangled answer at call time."""
+    if "extract" not in over:
+        return default
+    key = over["extract"]
+    if not isinstance(key, str) or key not in EXTRACTORS:   # a toml list/table is unhashable
+        raise ValueError(
+            f"council.toml [providers.{name}] extract must be one of {sorted(EXTRACTORS)}, "
+            f"not {key!r}")
+    return EXTRACTORS[key]
 
 
 @dataclasses.dataclass
@@ -84,7 +104,7 @@ def _cli_provider(name: str, over: dict) -> Provider:
     vs `--model sonnet`), which an override can't express because the base table has
     only one `claude`. Needs bin + argv; argv uses the same {prompt}/{prompt_file}/
     stdin convention as the built-ins. Output is read as plain text (the CLI-native
-    default); a voice needing JSON extraction is a built-in, not a toml definition."""
+    default) unless `extract` names another extractor (see EXTRACTORS)."""
     missing = [k for k in ("bin", "argv") if not over.get(k)]
     if missing:
         raise ValueError(
@@ -103,6 +123,7 @@ def _cli_provider(name: str, over: dict) -> Provider:
         fallbacks=_fallbacks_list(name, over),
         auth_check=list(over["auth_check"]) if "auth_check" in over else [],
         auth_fail_marker=str(over.get("auth_fail_marker", "")),
+        extract=_extract_fn(name, over, _plain),
     )
 
 
@@ -133,7 +154,8 @@ def _build_providers(data: dict) -> dict[str, Provider]:
     `type = "cli"` under a NEW name DEFINES a new subscription-CLI voice from
     scratch (bin + argv — e.g. a second Claude pinned to another model). Any
     other block OVERRIDES an existing CLI voice's argv/bin/timeout (a custom
-    install path, a flag fix, or a slower ceiling for one voice)."""
+    install path, a flag fix, or a slower ceiling for one voice), and `extract`
+    when the override swaps in a wrapper with a different stdout shape."""
     providers = dict(PROVIDERS)
     for name, over in (data.get("providers") or {}).items():
         if over.get("type") == "http":
@@ -154,6 +176,7 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             fallbacks=_fallbacks_list(name, over) if "fallbacks" in over else base.fallbacks,
             auth_check=list(over["auth_check"]) if "auth_check" in over else base.auth_check,
             auth_fail_marker=str(over["auth_fail_marker"]) if "auth_fail_marker" in over else base.auth_fail_marker,
+            extract=_extract_fn(name, over, base.extract),
         )
     for name, p in providers.items():
         bad = [f for f in p.fallbacks if f not in providers]

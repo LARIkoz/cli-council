@@ -20,6 +20,8 @@ chairman = "claude"
 # bin = "grok"
 # argv = ["grok", "--prompt-file", "{prompt_file}", "--output-format", "json"]
 # timeout = 900
+# extract = "grok_json"   # how stdout becomes the answer: "plain" or "grok_json". Set
+#                         # "plain" when argv swaps in a wrapper that prints plain text.
 
 # ── Optional: define an EXTRA CLI voice from scratch (type = "cli") ───────────
 # A NEW name with type="cli" defines a fresh subscription-CLI voice — most useful
