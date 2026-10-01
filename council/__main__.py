@@ -158,7 +158,7 @@ def _review_main(argv: list[str]) -> int:
         res = pipeline.run_review_pipeline(
             subject, target, voices, chairman, cfg.providers,
             audit_voices=audit_voices, redteam_voices=redteam_voices,
-            timeout=timeout, log=lambda m: print(m, file=sys.stderr))
+            timeout=timeout, roster=cfg.voices, log=lambda m: print(m, file=sys.stderr))
     except RuntimeError as e:
         print(f"review failed: {e}", file=sys.stderr)
         return 1
@@ -266,7 +266,7 @@ def _decide_main(argv: list[str]) -> int:
         res = pipeline.run_decide_pipeline(
             subject, target, voices, chairman, cfg.providers,
             audit_voices=audit_voices, redteam_voices=redteam_voices,
-            timeout=timeout, log=lambda m: print(m, file=sys.stderr))
+            timeout=timeout, roster=cfg.voices, log=lambda m: print(m, file=sys.stderr))
     except RuntimeError as e:
         print(f"decide failed: {e}", file=sys.stderr)
         return 1

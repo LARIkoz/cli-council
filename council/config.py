@@ -124,6 +124,7 @@ def _cli_provider(name: str, over: dict) -> Provider:
         auth_check=list(over["auth_check"]) if "auth_check" in over else [],
         auth_fail_marker=str(over.get("auth_fail_marker", "")),
         extract=_extract_fn(name, over, _plain),
+        session_rules=bool(over.get("session_rules", False)),
     )
 
 
@@ -177,6 +178,7 @@ def _build_providers(data: dict) -> dict[str, Provider]:
             auth_check=list(over["auth_check"]) if "auth_check" in over else base.auth_check,
             auth_fail_marker=str(over["auth_fail_marker"]) if "auth_fail_marker" in over else base.auth_fail_marker,
             extract=_extract_fn(name, over, base.extract),
+            session_rules=bool(over["session_rules"]) if "session_rules" in over else base.session_rules,
         )
     for name, p in providers.items():
         bad = [f for f in p.fallbacks if f not in providers]

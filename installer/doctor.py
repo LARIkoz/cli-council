@@ -105,7 +105,11 @@ def enroll(voices: list[str], verify: bool = True) -> int:
         # deliberately building a claude-less council (allowed, but warned).
         print("note: 'claude' (native default) not in the list — that's allowed, "
               "but the out-of-box guarantee is Claude. Continuing with your choice.")
-    chairman = "claude" if "claude" in voices else voices[0]
+    # Re-enrolling must not silently move the chairman: keep the one already in
+    # council.toml when it is still enrolled.
+    prior_chair = _existing_chairman()
+    chairman = (prior_chair if prior_chair in voices
+                else "claude" if "claude" in voices else voices[0])
     others = [v for v in voices if v != chairman]
     # Preserve any hand-written [providers.*] blocks (e.g. http/token voices) AND a
     # user-set global [council].timeout — enroll owns voices/chairman/panels, but must
@@ -223,6 +227,17 @@ def _existing_council_timeout():
     try:
         import tomllib
         return tomllib.loads(CONFIG.read_text()).get("council", {}).get("timeout")
+    except Exception:  # noqa: BLE001 — unreadable file: nothing to preserve
+        return None
+
+
+def _existing_chairman():
+    """The [council].chairman already in council.toml, or None."""
+    if not CONFIG.is_file():
+        return None
+    try:
+        import tomllib
+        return tomllib.loads(CONFIG.read_text()).get("council", {}).get("chairman")
     except Exception:  # noqa: BLE001 — unreadable file: nothing to preserve
         return None
 

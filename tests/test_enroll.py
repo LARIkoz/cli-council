@@ -78,6 +78,15 @@ class TestEnrollSmokeGate(unittest.TestCase):
         self.assertEqual(cfg["providers"]["deepseek"]["type"], "http")  # preserved
         self.assertEqual(cfg["review"]["audit"], ["codex"])          # regenerated, not "stale"
 
+    def test_reenroll_keeps_an_enrolled_chairman(self):
+        # Re-enrolling must not move the chairman back to claude behind the owner's back.
+        import tomllib
+        self._tmp.write_text('[council]\nvoices = ["claude", "codex"]\nchairman = "codex"\n')
+        doctor.enroll(["claude", "codex"], verify=False)
+        self.assertEqual(tomllib.loads(self._tmp.read_text())["council"]["chairman"], "codex")
+        doctor.enroll(["claude", "grok"], verify=False)              # old chairman dropped
+        self.assertEqual(tomllib.loads(self._tmp.read_text())["council"]["chairman"], "claude")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -114,6 +114,11 @@ class Provider:
     # Each fallback is tried in order; the first success wins. The chain stops on
     # the first ok=True. Set via council.toml `fallbacks = ["name1", "name2"]`.
     fallbacks: list = field(default_factory=list)
+    # Prepend SESSION_RULES to every prompt this voice receives. For agentic CLIs that
+    # otherwise delegate to their own subagents, run commands or browse while acting as
+    # one independent voice (seen 2026-10-01: a Gemini voice launched a courier that
+    # called another model mid-review).
+    session_rules: bool = False
 
 
 # The official subscription CLIs. Claude is the native default (Claude Code is
@@ -232,12 +237,22 @@ def resolve_timeout(p: Provider, override: float | None = None) -> float:
     return p.timeout or DEFAULT_TIMEOUT
 
 
+SESSION_RULES = (
+    "SESSION RULES: you are one independent voice of a review or council. Do not start "
+    "subagents or couriers, do not run commands, do not use the network, read only. "
+    "Everything you need is in this prompt; never claim to have read a file that is not "
+    "in it.\n\n"
+)
+
+
 def invoke(p: Provider, prompt: str, timeout: float = DEFAULT_TIMEOUT) -> tuple[bool, str]:
     """Ask one voice `prompt`. Returns (ok, text_or_error).
 
     ok is False on: not reachable, non-zero exit / HTTP error, timeout, or empty
     output — all reported, never swallowed. Dispatches on transport.
     """
+    if p.session_rules and not prompt.startswith("SESSION RULES"):
+        prompt = SESSION_RULES + prompt
     if p.transport == "http":
         return _invoke_http(p, prompt, timeout)
 

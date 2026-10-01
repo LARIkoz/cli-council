@@ -185,3 +185,36 @@ class TestRequiredVoicesWithFallbackChain(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRosterLeftOut(_FakeCouncil):
+    """--voices may narrow a run, but a roster voice it drops makes the run a different
+    review from the one the roster requires: degraded [infra], named, never clean."""
+    ROSTER = ["agy", "grok", "muse", "astra"]
+
+    def _run(self, voices, **kw):
+        providers = {v: _v(v) for v in self.ROSTER}
+        return pipeline.run_review_pipeline("SUBJECT", "t", voices, "astra", providers,
+                                            roster=self.ROSTER, log=lambda *_: None, **kw)
+
+    def test_full_roster_stays_clean(self):
+        res = self._run(self.ROSTER, audit_voices=["agy", "grok", "muse"])
+        self.assertEqual(res.status, "clean")
+
+    def test_subset_degrades_and_names_the_dropped_voice(self):
+        res = self._run(["agy", "muse", "astra"], audit_voices=["agy", "muse"])
+        self.assertEqual(res.status, "degraded")
+        self.assertEqual(res.degraded_kind, "infra")
+        self.assertIn("roster voice grok not selected for this run (--voices) [infra]",
+                      res.degraded_reasons)
+
+    def test_subset_without_panels_is_degraded_not_unverified(self):
+        res = self._run(["agy", "grok", "astra"])
+        self.assertEqual(res.status, "degraded")
+        self.assertTrue(any("roster voice muse" in r for r in res.degraded_reasons))
+
+    def test_no_roster_given_keeps_old_behaviour(self):
+        providers = {v: _v(v) for v in self.ROSTER}
+        res = pipeline.run_review_pipeline("SUBJECT", "t", ["agy", "grok", "astra"], "astra",
+                                           providers, audit_voices=["agy"], log=lambda *_: None)
+        self.assertEqual(res.status, "clean")

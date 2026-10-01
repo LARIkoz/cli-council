@@ -59,7 +59,15 @@ def _missing_voices(rev) -> list[str]:
     return reasons
 
 
-def _council_infra(rev) -> list[str]:
+def _left_out(roster, voices) -> list[str]:
+    """Roster voices ([council].voices) that a --voices selection dropped. A narrowed
+    run is a different review from the one the roster requires, even when every
+    selected voice answered, so it is never clean."""
+    return [f"roster voice {v} not selected for this run (--voices) [infra]"
+            for v in (roster or []) if v not in voices]
+
+
+def _council_infra(rev, left_out=()) -> list[str]:
     """Council-level infra signals that must degrade a run regardless of the audit
     verdict — a verifier reading CLEAN cannot launder them:
     - a synthesis-stage failure: `final` is a loud peer-top fallback (a raw voice),
@@ -82,21 +90,22 @@ def _council_infra(rev) -> list[str]:
         reasons.append(f"council ran with only {len(rev.council.opinions)} voice — no peer "
                        f"review or cross-checked synthesis [infra]")
     reasons += _missing_voices(rev)
+    reasons += list(left_out)
     return reasons
 
 
-def _unverified(rev) -> PipelineResult:
+def _unverified(rev, left_out=()) -> PipelineResult:
     """No verification configured → 'unverified'. But a council-level infra failure
     (synthesis failed, the council collapsed to one voice, or a selected voice is
     missing) is never a benign 'unverified' — surface it as degraded [infra]."""
-    infra = _council_infra(rev)
+    infra = _council_infra(rev, left_out)
     if infra:
         return PipelineResult(review=rev, status="degraded", degraded_kind="infra",
                               degraded_reasons=infra)
     return PipelineResult(review=rev, status="unverified")
 
 
-def _gate(rev, ver, log) -> PipelineResult:
+def _gate(rev, ver, log, left_out=()) -> PipelineResult:
     """Fold the verification verdict together with council-level infra failures into the
     final gate. The audit verdict alone can read CLEAN on a run that never really ran a
     council (chairman failed → fallback is a raw voice; or only one voice answered → the
@@ -105,7 +114,7 @@ def _gate(rev, ver, log) -> PipelineResult:
     reasons = list(ver.degraded_reasons)
     kinds = {ver.degraded_kind} if ver.degraded_kind else set()
     clean = ver.pipeline_clean
-    infra = _council_infra(rev)
+    infra = _council_infra(rev, left_out)
     if infra:
         reasons += infra
         kinds.add("infra")
@@ -123,7 +132,9 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
                         audit_voices: list[str] | None = None,
                         redteam_voices: list[str] | None = None,
                         timeout: float | None = None,
+                        roster: list[str] | None = None,
                         log=lambda *_: None) -> PipelineResult:
+    left_out = _left_out(roster, voices)
     reset_dead_cache()
     warm_ssh_providers(providers)
     audit_voices = list(audit_voices or [])
@@ -132,7 +143,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
     rev = reviewmod.run_review(subject, target, voices, chairman, providers, timeout, log=log)
 
     if not (audit_voices or redteam_voices):
-        return _unverified(rev)
+        return _unverified(rev, left_out)
 
     # Self-audit is the sharpest bias: the chairman approving its own synthesis.
     # A diverse panel dilutes it (1 vote of N under worst-wins), but say it loudly.
@@ -152,7 +163,7 @@ def run_review_pipeline(subject: str, target: str, voices: list[str], chairman: 
         timeout=timeout,
         log=log,
     )
-    return _gate(rev, ver, log)
+    return _gate(rev, ver, log, left_out)
 
 
 def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
@@ -161,6 +172,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
                         redteam_voices: list[str] | None = None,
                         timeout: float | None = None,
                         min_families: int = decidemod.MIN_FAMILIES,
+                        roster: list[str] | None = None,
                         log=lambda *_: None) -> PipelineResult:
     """Decide's one-call pipeline: decide COUNCIL (family-quorum-gated) → the
     DECISION audit panel → gate. Mirrors run_review_pipeline, with two decision
@@ -170,6 +182,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
     vocabulary, and worst-wins rules are the same engine — no fork. The phantom-file
     mechanical check is off (check_files=False): a decision has no diff, so a real
     repo file a voice names is not a phantom."""
+    left_out = _left_out(roster, voices)
     reset_dead_cache()
     warm_ssh_providers(providers)
     audit_voices = list(audit_voices or [])
@@ -179,7 +192,7 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
                                timeout, min_families=min_families, log=log)
 
     if not (audit_voices or redteam_voices):
-        return _unverified(rev)
+        return _unverified(rev, left_out)
 
     actual_chair = rev.council.chairman or chairman
     if actual_chair in audit_voices:
@@ -200,4 +213,4 @@ def run_decide_pipeline(question_prompt: str, target: str, voices: list[str],
         check_files=False,
         log=log,
     )
-    return _gate(rev, ver, log)
+    return _gate(rev, ver, log, left_out)
