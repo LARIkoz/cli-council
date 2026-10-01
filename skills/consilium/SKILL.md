@@ -1,6 +1,6 @@
 ---
 name: consilium
-description: Convene a multi-model DECISION council on the cli-council engine (`council decide`) — several independent subscription-CLI models recommend, anonymously peer-rank, a chairman synthesizes ONE audit-gated recommendation with action tiers. Auto-use when the user wants MORE than a single-model answer on a genuine decision or trade-off — convening a council / a consilium / a second opinion from several models, deciding between clear alternatives with real trade-offs, or names "consilium" / "council decide" or says "созови консилиум", "консилиум", "прими решение советом", "что выбрать", "взвесить варианты", "спроси несколько моделей". Each run spends a few wall-minutes across the CLIs you already authed ($0, no API keys) — reserve it for decisions worth that, not trivial or quick-fact questions (for those, just answer directly).
+description: Convene a multi-model DECISION council on the cli-council engine (`council decide`) — several independent subscription-CLI models recommend, anonymously peer-rank, a chairman synthesizes ONE audit-gated recommendation with action tiers. Auto-use when the user wants MORE than a single-model answer on a genuine decision or trade-off — convening a council / a consilium / a second opinion from several models, deciding between clear alternatives with real trade-offs, or asks for a consilium or council by name, in English or Russian. Each run spends a few wall-minutes across the CLIs you already authed ($0, no API keys) — reserve it for decisions worth that, not trivial or quick-fact questions (for those, just answer directly).
 user-invocable: true
 ---
 
@@ -40,7 +40,8 @@ Claude models) count as one family.
 
 1. **Preflight.** `council` must be on PATH (run the repo's `install.sh`, or put `bin/`
    on PATH) and `council.toml` must enrol your voices — the blessed path is `python3
-installer/doctor.py enroll claude <voice>...`: it re-smokes each and writes a GATED config
+installer/doctor.py enroll <voice>...` (your roster; a re-enroll keeps the
+   chairman already in `council.toml`): it re-smokes each and writes a GATED config
    with the `[decide]` audit panel already filled in from your voices. Hand-copying
    `council.example.toml` works too, but its `[decide]` block ships commented out — leave it
    commented and the run is `unverified` (no audit gate, no `AUDIT_VERDICT.md`). The engine
@@ -114,6 +115,19 @@ mixed]` / `unverified`) + `opinion_errors`.
    c. Verify each claim with a concrete identifier (number, %, date) — 2+ independent sources.
    d. Apply only verified; consilium-only = tentative; disproven → drop.
 
+## Fallback chain (optional)
+
+Voices can declare `fallbacks = ["name1", "name2"]` in council.toml. If the
+primary fails (usage limit, version error, timeout), fallbacks are tried in
+order; the first success wins. A dead-provider cache ensures a failed primary
+is skipped instantly on subsequent stages (stage 2/3/panels pay zero retry
+cost). Codex voices can add `auth_check` for a quick usage-limit preflight
+(~20s instead of 30min hang). SSH-based fallback providers (`bin = "ssh"`)
+get automatic ControlMaster warm-up at pipeline start.
+
+All fallback features are opt-in via council.toml — a fresh install with no
+fallbacks configured behaves identically to before.
+
 ## Dependencies
 
 - **cli-council** on PATH (`bin/council` → `python3 -m council`; Python 3.11+, stdlib only)
@@ -128,3 +142,10 @@ mixed]` / `unverified`) + `opinion_errors`.
   redteam panel — a bug has ground truth to refute).
 - `commands/consilium.md` — the explicit slash-command form of this exact procedure.
 - Engine internals: `council/{decide,pipeline,audit,stages}.py`.
+
+## Roster
+
+Every consilium runs the voices enrolled in `[council].voices` (`council roster`).
+A voice that does not answer is reported missing and degrades the run; it is never
+replaced by another model, and `decide` aborts below its family quorum. If your own
+agent instructions pin a required roster, enroll exactly that roster.

@@ -24,6 +24,9 @@ def _safe(name: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "review-session":
+        from .review_sessions import main as session_main
+        return session_main(argv[1:])
     if argv and argv[0] == "review":
         return _review_main(argv[1:])
     if argv and argv[0] == "decide":
