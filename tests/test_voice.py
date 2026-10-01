@@ -54,12 +54,45 @@ class TestVoiceForeground(_Base):
         self.assertIn("error_head:", text)
         self.assertFalse((out / "answer.md").exists())
 
-    def test_unknown_voice_fails_without_running_anything(self):
+    def test_unknown_voice_is_rejected_at_launch_without_a_job(self):
         out = self.tmp / "job"
-        rc, text = self.run_cli("voice", "nope", "--prompt-file", str(self.prompt),
-                                "--out-dir", str(out), "--config", str(self.cfg))
+        for extra in ([], ["--detach"]):
+            with self.assertRaises(SystemExit):
+                self.run_cli("voice", "nope", "--prompt-file", str(self.prompt),
+                             "--out-dir", str(out), "--config", str(self.cfg), *extra)
+        self.assertFalse(out.exists())
+
+    def test_engine_exception_is_a_loud_failure_with_traceback(self):
+        out = self.tmp / "job"
+        orig = V.providers.invoke_chain
+        V.providers.invoke_chain = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("engine blew up"))
+        try:
+            rc, text = self.run_cli("voice", "echo", "--prompt-file", str(self.prompt),
+                                    "--out-dir", str(out), "--config", str(self.cfg))
+        finally:
+            V.providers.invoke_chain = orig
         self.assertEqual(rc, V.EXIT_FAILED)
-        self.assertIn("failed:unknown_voice", text)
+        self.assertIn("failed:engine_error", text)
+        self.assertIn("engine blew up", text)
+
+    def test_voice_runs_in_the_job_directory_and_cwd_is_restored(self):
+        cfg = self.tmp / "pwd.toml"
+        cfg.write_text('[providers.pwd]\ntype = "cli"\nbin = "sh"\nargv = ["sh", "-c", "cat >/dev/null; pwd"]\n'
+                       '[council]\nvoices = ["pwd"]\nchairman = "pwd"\n')
+        out = self.tmp / "job"
+        here = Path.cwd()
+        rc, text = self.run_cli("voice", "pwd", "--prompt-file", str(self.prompt),
+                                "--out-dir", str(out), "--config", str(cfg))
+        self.assertEqual(rc, V.EXIT_ALIVE)
+        self.assertEqual(Path(text.strip().splitlines()[-1]).resolve(), out.resolve())
+        self.assertEqual(Path.cwd(), here)
+
+    def test_job_files_are_private(self):
+        out = self.tmp / "job"
+        self.run_cli("voice", "echo", "--prompt-file", str(self.prompt),
+                     "--out-dir", str(out), "--config", str(self.cfg))
+        self.assertEqual(out.stat().st_mode & 0o777, 0o700)
+        self.assertEqual((out / "prompt.md").stat().st_mode & 0o777, 0o600)
 
     def test_refuses_to_reuse_a_job_directory(self):
         out = self.tmp / "job"
@@ -84,11 +117,37 @@ class TestDetachAndWait(_Base):
         self.assertEqual(rc, V.EXIT_ALIVE, text)
         self.assertIn("late", text)
 
+    def test_wait_never_overwrites_a_final_status(self):
+        out = self.tmp / "job"
+        out.mkdir()
+        V._update_status(out, voice="echo", status="alive", started=time.time(), pid=2 ** 22 + 12345)
+        self.assertFalse(V._update_status(out, only_if_status="running", status="failed", reason="job_died"))
+        self.assertEqual(V.read_status(out)["status"], "alive")
+
+    def test_wait_honours_max_without_oversleeping(self):
+        out = self.tmp / "job"
+        out.mkdir()
+        V._update_status(out, voice="slow", status="running", started=time.time(), pid=__import__("os").getpid())
+        t0 = time.time()
+        rc, _ = V.wait(out, 0.3, poll=2.0)
+        self.assertEqual(rc, V.EXIT_RUNNING)
+        self.assertLess(time.time() - t0, 1.5)
+
+    def test_dead_worker_reports_its_run_log(self):
+        out = self.tmp / "job"
+        out.mkdir()
+        (out / "run.log").write_text("Traceback: ImportError: no module named council\n")
+        V._update_status(out, voice="echo", status="running", started=time.time(), pid=2 ** 22 + 12345)
+        rc, text = V.wait(out, 5)
+        self.assertEqual(rc, V.EXIT_FAILED)
+        self.assertIn("failed:job_died", text)
+        self.assertIn("ImportError", text)
+
     def test_wait_reports_a_dead_worker_instead_of_hanging(self):
         out = self.tmp / "job"
         out.mkdir()
         (out / "prompt.md").write_text("x")
-        V._write_status(out, voice="echo", status="running", started=time.time(), pid=2 ** 22 + 12345)
+        V._update_status(out, voice="echo", status="running", started=time.time(), pid=2 ** 22 + 12345)
         rc, text = self.run_cli("wait", str(out), "--max", "5")
         self.assertEqual(rc, V.EXIT_FAILED)
         self.assertIn("failed:job_died", text)
